@@ -1,0 +1,17 @@
+# build output
+coloring
+*.zip
+
+# report build files
+report/*.aux
+report/*.log
+report/*.out
+
+# Python
+__pycache__/
+
+# macOS
+.DS_Store
+
+# personal planning notes
+todo.txt

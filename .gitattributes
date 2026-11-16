@@ -1,0 +1,5 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# keep the Windows line-ending test file byte-for-byte
+tests/cases/*_crlf.in -text

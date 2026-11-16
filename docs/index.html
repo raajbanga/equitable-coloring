@@ -1,0 +1,1786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Equitable Coloring</title>
+<meta name="description" content="Interactive explainer for equitable graph coloring: finding a proper k-coloring with color classes as close to equal size as possible, using dynamic programming and branch and bound.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+<style>
+/* ---------- tokens (shadcn zinc) ---------- */
+:root {
+  --background: #ffffff; --foreground: #09090b;
+  --card: #ffffff; --muted: #f4f4f5; --muted-foreground: #71717a;
+  --border: #e4e4e7; --input: #e4e4e7; --ring: #a1a1aa;
+  --primary: #18181b; --primary-foreground: #fafafa;
+  --secondary: #f4f4f5; --page: #fafafa;
+  --info: #2563eb; --info-soft: rgba(37, 99, 235, .10);
+  --danger: #dc2626; --danger-soft: rgba(220, 38, 38, .10);
+  --success: #15803d; --success-soft: rgba(22, 163, 74, .12);
+  --warn-bg: #fffbeb; --warn-border: #fde68a; --warn-fg: #92400e;
+  --edge: #a1a1aa; --node-stroke: #3f3f46; --empty-node: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .05);
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #09090b; --foreground: #fafafa;
+    --card: #0c0c0e; --muted: #27272a; --muted-foreground: #a1a1aa;
+    --border: #27272a; --input: #3f3f46; --ring: #52525b;
+    --primary: #fafafa; --primary-foreground: #18181b;
+    --secondary: #27272a; --page: #09090b;
+    --info: #60a5fa; --info-soft: rgba(96, 165, 250, .14);
+    --danger: #f87171; --danger-soft: rgba(248, 113, 113, .14);
+    --success: #4ade80; --success-soft: rgba(74, 222, 128, .14);
+    --warn-bg: rgba(251, 191, 36, .08); --warn-border: rgba(251, 191, 36, .35); --warn-fg: #fcd34d;
+    --edge: #52525b; --node-stroke: #d4d4d8; --empty-node: #18181b;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --background: #09090b; --foreground: #fafafa;
+  --card: #0c0c0e; --muted: #27272a; --muted-foreground: #a1a1aa;
+  --border: #27272a; --input: #3f3f46; --ring: #52525b;
+  --primary: #fafafa; --primary-foreground: #18181b;
+  --secondary: #27272a; --page: #09090b;
+  --info: #60a5fa; --info-soft: rgba(96, 165, 250, .14);
+  --danger: #f87171; --danger-soft: rgba(248, 113, 113, .14);
+  --success: #4ade80; --success-soft: rgba(74, 222, 128, .14);
+  --warn-bg: rgba(251, 191, 36, .08); --warn-border: rgba(251, 191, 36, .35); --warn-fg: #fcd34d;
+  --edge: #52525b; --node-stroke: #d4d4d8; --empty-node: #18181b;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+body { background: var(--page); color: var(--foreground); font: 15px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+code, .mono { font-family: var(--mono); }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 24px 24px 48px; display: grid; gap: 16px; }
+.muted { color: var(--muted-foreground); }
+.small { font-size: 13.5px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.grow { flex: 1; }
+h1 { font-size: 28px; font-weight: 600; letter-spacing: -.025em; line-height: 1.2; margin: 2px 0 4px; }
+h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+h3 { font-size: 15px; font-weight: 600; }
+ul.list { padding-left: 18px; display: grid; gap: 6px; }
+ul.list li::marker { color: var(--muted-foreground); }
+b, strong { font-weight: 600; }
+
+/* ---------- components ---------- */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); min-width: 0; display: flex; flex-direction: column; }
+.card-header { padding: 20px 22px 0; display: grid; gap: 4px; }
+.card-header.split { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.card-desc { color: var(--muted-foreground); font-size: 14px; }
+.card-content { padding: 16px 22px 22px; flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.blk { display: grid; gap: 8px; }
+.editor { display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+.callout { background: var(--muted); border-radius: 8px; padding: 12px 14px; }
+.callout:empty { display: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid transparent; font-weight: 500; font-size: 14px; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, opacity .15s; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn-default { background: var(--primary); color: var(--primary-foreground); }
+.btn-default:hover:not(:disabled) { opacity: .9; }
+.btn-outline { background: var(--background); border-color: var(--input); }
+.btn-outline:hover:not(:disabled) { background: var(--muted); }
+.btn-ghost { background: transparent; }
+.btn-ghost:hover:not(:disabled) { background: var(--muted); }
+.btn-sm { height: 32px; padding: 0 10px; font-size: 13px; }
+.btn-icon { width: 36px; padding: 0; }
+.input, .textarea { height: 36px; border: 1px solid var(--input); border-radius: 8px; background: var(--background); padding: 0 10px; font-size: 14px; }
+/* Select (shadcn/Radix style): trigger + popover listbox */
+.sel { position: relative; }
+.sel-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 36px; width: 100%; padding: 0 10px 0 12px;
+  border: 1px solid var(--input); border-radius: 8px; background: var(--background); font-size: 14px; text-align: left; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04); transition: border-color .15s, box-shadow .15s; }
+.sel-trigger:focus-visible, .sel-trigger[aria-expanded="true"] { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent); }
+.sel-trigger .chev { flex: none; opacity: .5; }
+.sel-trigger .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-content { position: absolute; z-index: 50; top: calc(100% + 4px); left: 0; min-width: 100%; max-height: min(460px, 70vh); overflow-y: auto;
+  background: var(--card); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, .1), 0 4px 6px -4px rgba(0, 0, 0, .1); animation: selIn .12s ease-out; transform-origin: top; }
+@keyframes selIn { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+.sel-group { padding: 6px 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.sel-sep { height: 1px; background: var(--border); margin: 4px -4px; }
+.sel-item { position: relative; display: flex; align-items: center; gap: 12px; padding: 6px 32px 6px 8px; border-radius: 6px; font-size: 14px; cursor: default; user-select: none; white-space: nowrap; }
+.sel-item[data-active] { background: var(--muted); }
+.sel-item[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+.sel-item .hint { margin-left: auto; font-size: 12px; color: var(--muted-foreground); }
+.sel-item .check { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); visibility: hidden; }
+.sel-item[aria-selected="true"] .check { visibility: visible; }
+.input:focus-visible, .textarea:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent); }
+.textarea { height: auto; min-height: 180px; width: 100%; padding: 10px; font: 13px/1.5 var(--mono); resize: vertical; }
+.top a { color: inherit; text-underline-offset: 2px; }
+.top a:hover { color: var(--foreground); }
+.label { font-size: 13px; font-weight: 500; display: grid; gap: 6px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 1px 8px; font-size: 12px; font-weight: 500; border: 1px solid transparent; white-space: nowrap; }
+.badge-secondary { background: var(--secondary); }
+.badge-outline { border-color: var(--border); }
+.badge-success { background: var(--success-soft); color: var(--success); }
+.badge-danger { background: var(--danger-soft); color: var(--danger); }
+.badge-info { background: var(--info-soft); color: var(--info); }
+.alert { border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.alert.err { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.alert:empty { display: none; }
+.sep { height: 1px; background: var(--border); }
+.kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--muted-foreground); }
+.tabs-list { justify-self: start; display: inline-flex; flex-wrap: wrap; gap: 2px; background: var(--muted); padding: 3px; border-radius: 10px; }
+.tab { height: 34px; padding: 0 16px; font-size: 14.5px; border: 0; border-radius: 7px; background: transparent; color: var(--muted-foreground); font-weight: 500; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+.panel[hidden] { display: none; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; font-weight: 500; color: var(--muted-foreground); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+input[type="range"] { accent-color: var(--primary); }
+details summary { cursor: pointer; font-weight: 500; font-size: 13px; color: var(--muted-foreground); list-style: none; }
+details summary::before { content: "▸ "; }
+details[open] summary::before { content: "▾ "; }
+
+/* ---------- layout ---------- */
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.controls-grid { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.field-grow { flex: 1 1 260px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.kpi { padding: 16px 18px; gap: 2px; }
+.kpi .k-label { font-size: 14px; color: var(--muted-foreground); }
+.kpi .k-value { font-size: 24px; font-weight: 600; letter-spacing: -.02em; font-family: var(--mono); line-height: 1.3; overflow-wrap: anywhere; }
+.kpi .k-sub { font-size: 13px; color: var(--muted-foreground); }
+/* every tab: equal-width columns; cards in a row share one height */
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.span2 { grid-column: 1 / -1; }
+
+/* ---------- graph ---------- */
+.graph { width: 100%; display: block; flex: 1 1 0; min-height: 260px; max-height: 460px; }
+.graph line { stroke: var(--edge); stroke-width: 1.5; }
+.graph line.hot { stroke: var(--danger); stroke-width: 3; }
+.graph line.focus { stroke: var(--foreground); stroke-width: 2.2; }
+.graph line.dim { opacity: .25; }
+.graph circle.node { stroke: var(--node-stroke); stroke-width: 1.2; }
+.graph circle.empty { fill: var(--empty-node); stroke-dasharray: 3 2.5; }
+.graph circle.ring { fill: none; stroke: var(--foreground); stroke-width: 2.5; }
+.graph circle.ring.bad { stroke: var(--danger); }
+.graph circle.ring.pick { stroke: var(--info); stroke-dasharray: 4 3; }
+.graph text { font-family: var(--mono); font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.graph g.dimmed { opacity: .28; }
+.pop { animation: pop .28s ease-out; transform-box: fill-box; transform-origin: center; }
+@keyframes pop { from { transform: scale(.6); } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted-foreground); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--node-stroke); display: inline-block; flex: none; }
+.dot.dash { border-style: dashed; background: var(--empty-node); }
+.ringdot { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--foreground); display: inline-block; }
+.ringdot.bad { border-color: var(--danger); }
+.groups-out { display: grid; gap: 6px; }
+.group-line { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.group-line .name { min-width: 64px; font-weight: 500; }
+.group-line .members { font-family: var(--mono); color: var(--muted-foreground); overflow-wrap: anywhere; }
+
+/* ---------- output / code ---------- */
+pre.out { font: 14px/1.6 var(--mono); background: var(--muted); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
+.code { font: 13px/1.75 var(--mono); background: var(--muted); border-radius: 8px; padding: 8px 0; overflow-x: auto; }
+.ln { display: flex; align-items: center; gap: 12px; height: 23px; min-width: max-content; padding-right: 10px; border-left: 3px solid transparent; white-space: pre; }
+.ln u { flex: none; width: 26px; text-decoration: none; color: var(--muted-foreground); text-align: right; user-select: none; }
+.ln .kw { color: var(--info); font-weight: 500; }
+.ln .cm { color: var(--muted-foreground); }
+/* value annotation for the current line: a small pill at the right edge */
+.ln em { margin-left: auto; font: 500 12px/17px var(--mono); font-style: normal; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 5px; padding: 0 7px; }
+.ln em:empty { display: none; }
+.ln.ev { background: rgba(127, 127, 127, .07); }
+.ln.hit { background: var(--info-soft); border-left-color: var(--info); }
+.ln.hit.bad { background: var(--danger-soft); border-left-color: var(--danger); }
+.ln.hit.good { background: var(--success-soft); border-left-color: var(--success); }
+/* variables panel: fixed 3-column grid so cells never jump */
+.vars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.var { background: var(--muted); border-radius: 8px; padding: 6px 12px 7px; display: grid; min-width: 0; }
+.var span { font-size: 12.5px; color: var(--muted-foreground); }
+.var b { font: 600 14.5px/1.4 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.var b.nil { color: var(--muted-foreground); font-weight: 400; }
+.status { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; height: 134px; overflow-y: auto; font-size: 15px; flex: none; }
+.status .tag { display: flex; width: fit-content; margin-bottom: 8px; font-size: 14px; font-weight: 600; padding: 4px 12px; border-radius: 7px; }
+.status .tag.badge-danger { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.status .tag.badge-success { border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+/* final outcomes: solid fill so the result is impossible to miss */
+.status .tag.final.badge-danger { background: var(--danger); color: var(--card); border-color: var(--danger); }
+.status .tag.final.badge-success { background: var(--success); color: var(--card); border-color: var(--success); }
+
+.player { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; }
+.player input[type="range"] { flex: 1 1 120px; min-width: 100px; }
+.player .pos { font: 12px var(--mono); color: var(--muted-foreground); min-width: 64px; text-align: right; }
+
+/* ---------- group bars (backtracking) ---------- */
+.gbars { display: grid; gap: 7px; }
+#btBound { height: calc(2 * 1.6em); }
+.gbar { display: grid; grid-template-columns: 80px minmax(0, 1fr) 104px; align-items: center; gap: 10px; font-size: 13.5px; }
+.gbar .nm { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.track { position: relative; height: 12px; border-radius: 6px; background: var(--muted); overflow: hidden; }
+.track s { position: absolute; inset: 0 auto 0 0; border-radius: 6px; text-decoration: none; transition: width .2s; }
+.track s.cap { background: var(--ring); opacity: .35; }
+.track s.sz { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
+.gbar .nums { font-family: var(--mono); color: var(--muted-foreground); text-align: right; font-size: 13px; white-space: nowrap; }
+
+/* ---------- DP visuals ---------- */
+.ranges { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 13px var(--mono); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; color: var(--muted-foreground); }
+.chip.ok { border-color: var(--success); color: var(--success); }
+.chip.no { text-decoration: line-through; }
+.chip.cur { background: var(--info-soft); border-color: var(--info); color: var(--foreground); text-decoration: none; }
+.sizeline { display: flex; gap: 3px; flex-wrap: wrap; }
+.sizeline div { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; font: 13px var(--mono); background: var(--muted); color: var(--muted-foreground); }
+.sizeline div.in { background: var(--info); color: #fff; }
+.sizeline div.avg { box-shadow: inset 0 0 0 2px var(--foreground); }
+/* DP table: one tile per set of vertices, one row per set size (the fill order) */
+.lat { display: grid; gap: 6px; }
+.lat-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 12px; }
+.lat-k { font-size: 13px; color: var(--muted-foreground); text-align: right; }
+.lat-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.t { width: var(--tw); height: var(--th); border-radius: 6px; background: var(--muted); display: grid; align-content: center; justify-items: center; line-height: 1.2; }
+.t .ts { font: var(--tsf) var(--mono); color: var(--muted-foreground); }
+.t .tv { font: 600 var(--tvf) var(--mono); min-height: 1.2em; }
+.t.on { background: var(--info-soft); box-shadow: inset 0 0 0 1px var(--info); }
+.t.on .ts { color: var(--foreground); }
+.t.full { box-shadow: inset 0 0 0 2px var(--foreground); }
+.t.okfull { background: var(--success); color: var(--card); }
+.t.okfull .ts { color: var(--card); }
+.t.S { box-shadow: inset 0 0 0 2px var(--foreground); }
+.t.R { background: var(--info); color: #fff; }
+.t.R .ts { color: #fff; }
+
+/* ---------- charts ---------- */
+.chart-box { position: relative; flex: 1 1 0; min-height: 220px; }
+.chart-fallback { color: var(--muted-foreground); font-size: 13px; padding: 20px 0; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted-foreground); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+footer { color: var(--muted-foreground); font-size: 12px; text-align: center; padding-top: 8px; }
+
+@media (max-width: 1040px) {
+  .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .graph { flex: none; height: auto; aspect-ratio: 640 / 420; min-height: 0; }
+  .chart-box { flex: none; height: 280px; }
+  .span2 .card-content.cols { columns: 1; }
+}
+/* a full-width text card flows into two readable columns */
+.card-content.cols { display: block; columns: 2; column-gap: 40px; }
+.card-content.cols > * { margin-bottom: 12px; }
+.card-content.cols ul.list { display: block; }
+.card-content.cols li, .card-content.cols p { break-inside: avoid; }
+.card-content.cols li + li { margin-top: 6px; }
+@media (max-width: 640px) {
+  .status { height: 182px; }
+  #btBound { height: calc(4 * 1.6em); }
+  .wrap { padding: 16px 16px 40px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gbar { grid-template-columns: 64px minmax(0, 1fr) 96px; }
+  h1 { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .pop, .spinner, .sel-content { animation: none; } .track s { transition: none; } }
+@media print { .player, .controls-grid button, #themeBtn { display: none; } .card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="muted small">Raaj Banga · <a href="https://github.com/raajbanga/equitableColoring">Source on GitHub</a></p>
+      <h1>Equitable Coloring</h1>
+      <p class="muted">Color a graph so neighbors never match, use all k colors, and keep the color groups as close in size as possible.</p>
+    </div>
+  </header>
+
+  <!-- input -->
+  <section class="card">
+    <div class="card-content" style="padding:18px 22px">
+      <div class="controls-grid">
+        <div class="label field-grow"><span id="presetLbl">Graph</span>
+          <div class="sel" id="presetSel"></div>
+        </div>
+        <label class="label">Colors (k)
+          <input class="input" id="kInput" type="number" min="1" max="64" value="3" style="width:90px">
+        </label>
+        <button class="btn btn-default" id="colorBtn" type="button">Color</button>
+        <button class="btn btn-outline" id="randomBtn" type="button">Randomize</button>
+        <button class="btn btn-outline btn-icon" id="themeBtn" type="button" aria-label="Switch light or dark theme" title="Switch light or dark theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>
+      </div>
+      <div id="editor" class="editor" hidden>
+        <p class="small muted">Same format the program reads: k, then n, then the n × n adjacency matrix with spaces between entries. Up to 64 vertices. Edit it, then press Color.</p>
+        <textarea class="textarea" id="inputText" spellcheck="false" aria-label="Input file"></textarea>
+        <div class="alert err" id="parseErr"></div>
+      </div>
+      <div class="alert" id="warnings"></div>
+    </div>
+  </section>
+
+  <!-- KPIs -->
+  <section class="kpis">
+    <div class="card kpi"><div class="k-label">Vertices (n)</div><div class="k-value" id="kpiN">–</div><div class="k-sub" id="kpiNsub">&nbsp;</div></div>
+    <div class="card kpi"><div class="k-label">Edges</div><div class="k-value" id="kpiM">–</div><div class="k-sub" id="kpiMsub">&nbsp;</div></div>
+    <div class="card kpi"><div class="k-label">Colors (k)</div><div class="k-value" id="kpiK">–</div><div class="k-sub" id="kpiKsub">&nbsp;</div></div>
+    <div class="card kpi"><div class="k-label">Best possible score</div><div class="k-value" id="kpiLB">–</div><div class="k-sub" id="kpiLBsub">&nbsp;</div></div>
+    <div class="card kpi"><div class="k-label">Answer</div><div class="k-value" id="kpiAns">–</div><div class="k-sub" id="kpiAnsSub">&nbsp;</div></div>
+  </section>
+
+  <!-- tabs -->
+  <nav class="tabs-list" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" id="tab-bt" aria-controls="panel-bt" aria-selected="false">Backtracking</button>
+    <button class="tab" role="tab" id="tab-dp" aria-controls="panel-dp" aria-selected="false">Dynamic programming</button>
+    <button class="tab" role="tab" id="tab-speed" aria-controls="panel-speed" aria-selected="false">Speed &amp; complexity</button>
+  </nav>
+
+  <!-- ===== Overview ===== -->
+  <section class="panel grid2" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+    <div class="card">
+      <div class="card-header split">
+        <div><h2>Coloring result</h2><p class="card-desc">The coloring the program prints for this input.</p></div>
+        <span class="badge badge-secondary" id="methodBadge"></span>
+      </div>
+      <div class="card-content">
+        <svg class="graph" id="ovGraph" viewBox="0 0 640 420" role="img" aria-label="Graph with the final coloring"></svg>
+        <div class="groups-out" id="ovGroups"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Program output</h2><p class="card-desc">Exactly what <code>./coloring input.txt</code> prints.</p></div>
+      <div class="card-content">
+        <pre class="out" id="ovOut"></pre>
+        <ul class="list">
+          <li>The first line is the color sequence: the size of each color group, largest first.</li>
+          <li>Each line after that lists the vertices that got one color.</li>
+        </ul>
+        <div class="sep"></div>
+        <h3>Score of this answer</h3>
+        <p class="muted">Sort the group sizes and add up the gaps between neighbors. The middle numbers cancel out, so the score is just the biggest group minus the smallest.</p>
+        <pre class="out" id="scoreDemo"></pre>
+        <p class="muted">The best possible score is 0 when k divides n evenly and 1 otherwise. The program stops as soon as it reaches that score, because nothing can beat it.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Problem statement</h2></div>
+      <div class="card-content">
+        <p>Given a graph and a number of colors k, color every vertex so that:</p>
+        <ul class="list">
+          <li>no two vertices joined by an edge share a color,</li>
+          <li>all k colors are used, and</li>
+          <li>the color groups are as close in size as possible.</li>
+        </ul>
+        <p>If no coloring follows the first two rules, the program prints “no such a sequence exists.”</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Solver selection</h2></div>
+      <div class="card-content">
+        <ul class="list">
+          <li><b>k &gt; n:</b> some color would be empty, so there is no answer.</li>
+          <li><b>k = n:</b> every vertex gets its own color.</li>
+          <li><b>n ≤ 16:</b> dynamic programming (Dynamic programming tab).</li>
+          <li><b>n &gt; 16:</b> branch and bound (Backtracking tab).</li>
+        </ul>
+        <p>Both solvers always find the best score. DP takes about the same time on every graph of a given size, but its memory doubles with every vertex, so it is only used up to 16 vertices.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Hardness</h2></div>
+      <div class="card-content">
+        <p>An answer exists exactly when the graph can be colored with k colors. For k = 3 that question is the 3-coloring problem, which is NP-complete.</p>
+        <p>No polynomial-time method is known, so the program has to search. The work goes into pruning that search: skipping branches that can't lead to a better answer.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Deterministic output</h2></div>
+      <div class="card-content">
+        <p>A graph often has several best colorings. The program always prints the same one:</p>
+        <ul class="list">
+          <li>Vertex 1 gets the earliest color it can, then vertex 2, and so on.</li>
+          <li>Colors are named in order of first use: Yellow, Blue, Red, Green, …</li>
+          <li>Lines are sorted by group size, then by name.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Backtracking ===== -->
+  <section class="panel grid2" id="panel-bt" role="tabpanel" aria-labelledby="tab-bt" hidden>
+    <div class="card">
+      <div class="card-header split">
+        <div><h2>Branch-and-bound search</h2><p class="card-desc" id="btDesc"></p></div>
+        <span class="badge badge-outline" id="btBadge"></span>
+      </div>
+      <div class="card-content">
+        <svg class="graph" id="btGraph" viewBox="0 0 640 420" role="img" aria-label="Graph during the backtracking search"></svg>
+        <div class="legend">
+          <span><i class="dot dash"></i>not colored yet</span>
+          <span><i class="ringdot"></i>vertex being colored</span>
+          <span><i class="ringdot bad"></i>clash or stuck</span>
+        </div>
+        <div class="sep"></div>
+        <div class="blk">
+          <h3>Color class sizes</h3>
+          <div class="gbars" id="btBars"></div>
+          <p class="muted small" id="btBound"></p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Execution trace</h2><p class="card-desc">Step with <span class="kbd">←</span> <span class="kbd">→</span>, play with <span class="kbd">Space</span>. One step is one call to search().</p></div>
+      <div class="card-content">
+        <div class="code" id="btCode"></div>
+        <p class="status" id="btStatus" aria-live="polite"></p>
+        <div class="vars" id="btVars"></div>
+        <div class="player" id="btPlayer"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Algorithm</h2></div>
+      <div class="card-content">
+        <p>Color one vertex at a time. If a vertex has no legal color left, undo the last choice and try the next one. Keep the best coloring found so far.</p>
+        <p>The color class bars show the state of the search:</p>
+        <ul class="list">
+          <li><b>Solid bar:</b> vertices in the group right now.</li>
+          <li><b>Light bar:</b> the most the group could still hold, counting every uncolored vertex with no neighbor in it.</li>
+          <li>From the light bars, the search works out the best score this branch could still reach. If that's no better than the best found so far, it skips the branch.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Pruning rules</h2></div>
+      <div class="card-content">
+        <p>Trying everything takes far too long, so four rules cut the search down:</p>
+        <ul class="list">
+          <li><b>Symmetry breaking.</b> A vertex may only use a color already in use, or the next new one. Renaming colors gives the same groups, so those copies are skipped.</li>
+          <li><b>Forward checking.</b> If an uncolored vertex already touches every group, the branch is dead.</li>
+          <li><b>Bounding.</b> If the best score a branch could still reach is no better than the best found, skip it.</li>
+          <li><b>Ordering heuristics.</b> Color vertices with the most neighbors first, and try the smallest group first.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== DP ===== -->
+  <section class="panel" id="panel-dp" role="tabpanel" aria-labelledby="tab-dp" hidden>
+    <div id="dpOff" class="card" hidden><div class="card-content"><p id="dpOffMsg"></p></div></div>
+    <div class="grid2" id="dpOn">
+      <div class="card">
+        <div class="card-header split">
+          <div><h2>Dynamic programming over subsets</h2><p class="card-desc" id="dpDesc"></p></div>
+          <span class="badge badge-outline" id="dpBadge"></span>
+        </div>
+        <div class="card-content">
+          <svg class="graph" id="dpGraph" viewBox="0 0 640 420" role="img" aria-label="Graph during the DP rebuild"></svg>
+          <div class="legend">
+            <span><i class="dot dash"></i>not placed yet</span>
+            <span><i class="ringdot"></i>group being taken</span>
+          </div>
+          <div class="sep"></div>
+          <div class="blk">
+            <h3>Size ranges tried</h3>
+            <p class="muted small">From most equal to least equal. The first range that works gives the best score.</p>
+            <div class="ranges" id="dpRanges"></div>
+          </div>
+          <div class="blk">
+            <h3>Allowed group sizes</h3>
+            <p class="muted small">Blue: sizes allowed in this step. Outlined: n / k, the perfectly even size.</p>
+            <div class="sizeline" id="dpSizeline"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Execution trace</h2><p class="card-desc">Step with <span class="kbd">←</span> <span class="kbd">→</span>, play with <span class="kbd">Space</span>.</p></div>
+        <div class="card-content">
+          <div class="code" id="dpCode"></div>
+          <p class="status" id="dpStatus" aria-live="polite"></p>
+          <div class="vars" id="dpVars"></div>
+          <div class="player" id="dpPlayer"></div>
+        </div>
+      </div>
+      <div class="card span2" id="dpTableCard">
+        <div class="card-header"><h2>DP table</h2><p class="card-desc" id="dpTableDesc"></p></div>
+        <div class="card-content">
+          <div class="subsets" id="dpTable"></div>
+          <p class="muted" id="dpTableNote"></p>
+        </div>
+      </div>
+      <div class="card span2" id="dpAlgo">
+        <div class="card-header"><h2>Algorithm</h2></div>
+        <div class="card-content cols">
+          <p>Instead of coloring one vertex at a time, build the coloring one whole color group at a time.</p>
+          <ul class="list">
+            <li>A <b>legal group</b> is a set of vertices with no edge inside it.</li>
+            <li>The table answers one question for every set of vertices: can it be split into j legal groups, each with a size between lo and hi?</li>
+            <li>Each answer comes from smaller sets. Take out one legal group that holds the set's first vertex. If the rest splits into j − 1 groups, the whole set splits into j.</li>
+            <li>The same smaller sets come up again and again, so each answer is saved and never worked out twice.</li>
+            <li>Once a size range works, walk back through the table to read out the groups.</li>
+          </ul>
+          <p>The table has one entry per set of vertices (2ⁿ of them), so the program uses DP only up to 16 vertices.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Speed ===== -->
+  <section class="panel grid2" id="panel-speed" role="tabpanel" aria-labelledby="tab-speed" hidden>
+    <div class="card">
+      <div class="card-header split">
+        <div><h2>Pruning ablation</h2><p class="card-desc">Search steps on this graph as each pruning rule is switched on.</p></div>
+        <span class="small muted" id="ablStatus"></span>
+      </div>
+      <div class="card-content">
+        <div class="chart-box"><canvas id="ablChart" aria-label="Search steps per setup"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>How to read this chart</h2></div>
+      <div class="card-content">
+        <ul class="list">
+          <li>Every bar runs the same backtracking search on the graph above. From left to right, one more pruning rule is switched on.</li>
+          <li>Bar height is the number of search steps. The scale is logarithmic: each grid line is 10 times the one below it.</li>
+          <li>A red bar hit the limit of 1,000,000 steps and was stopped, so the real count is even higher.</li>
+          <li>The dark bar on the right is what the program actually runs.</li>
+        </ul>
+        <div class="callout" id="ablSummary"></div>
+        <p class="muted small" id="ablHint">Which rule matters most depends on the graph. Try “Star with 39 leaves”: bounding does almost all of the work there.</p>
+      </div>
+    </div>
+    <div class="card span2">
+      <div class="card-header"><h2>Ablation results</h2><p class="card-desc">The numbers behind the chart, measured in your browser.</p></div>
+      <div class="card-content" style="overflow-x:auto"><table class="tbl" id="ablTable"></table></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>DP runtime</h2><p class="card-desc">Measured on random graphs with k = 3 (from the report).</p></div>
+      <div class="card-content">
+        <div class="chart-box"><canvas id="dpChart" aria-label="DP time versus number of vertices"></canvas></div>
+        <p class="muted">Each extra 2 vertices make DP about 9 times slower (3² = 9), as the analysis predicts. At 20 vertices it already takes a second, which is why bigger graphs use branch and bound.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Complexity</h2><p class="card-desc">n is the number of vertices. The input is an n × n grid, so the input size is N = n².</p></div>
+      <div class="card-content">
+        <table class="tbl">
+          <thead><tr><th>Part</th><th>Time</th><th>Memory</th></tr></thead>
+          <tbody>
+            <tr><td>Read, check, print</td><td>O(n²)</td><td>O(n²)</td></tr>
+            <tr><td>Dynamic programming (n ≤ 16)</td><td>O(n² · 3ⁿ)</td><td>O(2ⁿ)</td></tr>
+            <tr><td>Branch and bound (n &gt; 16)</td><td>O(kⁿ · k²)</td><td>O(n)</td></tr>
+          </tbody>
+        </table>
+        <ul class="list">
+          <li><b>Reading</b> touches each of the n² entries once, so it is linear in the input size.</li>
+          <li><b>DP:</b> each vertex is outside the set, in the group, or in the rest, so one pass costs about 3ⁿ. There are at most about n² size ranges.</li>
+          <li><b>Branch and bound:</b> each vertex tries at most k colors, so up to kⁿ partial colorings.</li>
+          <li>Pruning makes real inputs fast, but the worst case stays exponential.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>Everything on this page runs in your browser and follows the same steps as the C program.</footer>
+</div>
+
+<script>
+/* SOLVER:BEGIN — a line-for-line port of the C program (src/*.c) */
+const PALETTE_NAMES = ["Yellow", "Blue", "Red", "Green", "Orange", "Purple", "Pink", "Brown", "Black", "White", "Gray", "Cyan"];
+const MAX_N = 64, DP_AUTO_N = 16;
+const NONE_TEXT = "no such a sequence exists";
+
+function colorName(c) { return c < PALETTE_NAMES.length ? PALETTE_NAMES[c] : `Color ${c + 1}`; }
+function spreadLowerBound(n, k) { return n % k === 0 ? 0 : 1; }
+
+function makeGraph(n, edges) {
+  const adj = Array.from({ length: n }, () => new Uint8Array(n));
+  for (const [a, b] of edges) { adj[a][b] = adj[b][a] = 1; }
+  const nbrs = adj.map(row => { const r = []; row.forEach((x, j) => { if (x) r.push(j); }); return r; });
+  const edgeList = [];
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (adj[i][j]) edgeList.push([i, j]);
+  const mask = n <= 30 ? nbrs.map(r => r.reduce((m, j) => m | (1 << j), 0)) : null;
+  return { n, adj, nbrs, edges: edgeList, m: edgeList.length, deg: nbrs.map(r => r.length), mask };
+}
+
+function isConnected(g) {
+  const seen = new Uint8Array(g.n), stack = [0];
+  seen[0] = 1;
+  let count = 1;
+  while (stack.length) { const v = stack.pop(); for (const u of g.nbrs[v]) if (!seen[u]) { seen[u] = 1; count++; stack.push(u); } }
+  return count === g.n;
+}
+
+/* io.c read_input: same checks, same messages */
+function parseInput(text) {
+  const toks = text.replace(/^﻿/, "").split(/\s+/).filter(Boolean);
+  const isInt = s => /^[+-]?\d+$/.test(s);
+  let p = 0;
+  if (p >= toks.length || !isInt(toks[p])) return { error: "first value (k) is missing or not an integer" };
+  const k = Number(toks[p++]);
+  if (k <= 0) return { error: `k must be > 0 (got ${toks[p - 1]})` };
+  if (p >= toks.length || !isInt(toks[p])) return { error: "second value (n) is missing or not an integer" };
+  const n = Number(toks[p++]);
+  if (n <= 0) return { error: `n must be > 0 (got ${toks[p - 1]})` };
+  if (n > MAX_N) return { error: `n = ${n} is above the supported maximum of ${MAX_N}` };
+  const raw = Array.from({ length: n }, () => new Uint8Array(n));
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    if (p >= toks.length) return { error: `matrix has fewer than ${n * n} entries (missing row ${i + 1}, column ${j + 1})` };
+    const t = toks[p++];
+    if (t === "1") raw[i][j] = 1;
+    else if (t !== "0") return { error: `matrix entry at row ${i + 1}, column ${j + 1} is '${t}', expected 0 or 1` };
+  }
+  if (p < toks.length) return { error: `matrix has more than ${n * n} entries` };
+  const warnings = [], edges = [];
+  for (let i = 0; i < n; i++) {
+    if (raw[i][i]) return { error: `self-loop: diagonal entry at row ${i + 1} is 1` };
+    for (let j = i + 1; j < n; j++) {
+      if (raw[i][j] !== raw[j][i]) warnings.push(`matrix is not symmetric at row ${i + 1}, column ${j + 1}; treating it as edge ${i + 1}-${j + 1}`);
+      if (raw[i][j] || raw[j][i]) edges.push([i, j]);
+    }
+  }
+  const g = makeGraph(n, edges);
+  if (!isConnected(g)) warnings.push("graph is not connected; solving it anyway");
+  return { k, g, warnings };
+}
+
+/* io.c print_result */
+function formatOutput(n, k, color) {
+  if (!color) return NONE_TEXT;
+  const size = new Array(k).fill(0), members = Array.from({ length: k }, () => []);
+  for (let v = 0; v < n; v++) { members[color[v]].push(v + 1); size[color[v]]++; }
+  const P = PALETTE_NAMES.length;
+  const nameBefore = (a, b) => (a < P && b < P) ? PALETTE_NAMES[a] < PALETTE_NAMES[b] : (a < P || b < P) ? a < P : a < b;
+  const order = [...Array(k).keys()];
+  for (let i = 1; i < k; i++) {
+    const c = order[i]; let j = i - 1;
+    while (j >= 0 && (size[order[j]] < size[c] || (size[order[j]] === size[c] && nameBefore(c, order[j])))) { order[j + 1] = order[j]; j--; }
+    order[j + 1] = c;
+  }
+  const width = Math.max(...order.map(c => colorName(c).length));
+  const lines = ["(" + order.map(c => size[c]).join(",") + ")"];
+  for (const c of order) lines.push(colorName(c).padEnd(width) + " : " + members[c].join(", "));
+  return lines.join("\n");
+}
+
+/* bnb.c water_fill: smallest M >= from with sum(min(cap, M)) >= N */
+function waterFill(cap, from, N, K) {
+  let lo = from, hi = N;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    let sum = 0;
+    for (let c = 0; c < K; c++) sum += cap[c] < mid ? cap[c] : mid;
+    if (sum >= N) hi = mid; else lo = mid + 1;
+  }
+  return lo;
+}
+
+/* bnb.c search, with switches so each pruning rule can be turned off.
+   o: { degreeOrder, smallestFirst, symmetry, forward, bound, initBest, target, budget, record, maxSteps } */
+function runSearch(g, K, o) {
+  const N = g.n, nb = g.nbrs;
+  const order = [...Array(N).keys()];
+  if (o.degreeOrder) order.sort((a, b) => g.deg[b] - g.deg[a]);   /* stable: ties keep input order */
+  const color = new Int8Array(N).fill(-1), size = new Int32Array(K), cnt = new Int32Array(K * N);
+  const caps = Array.from({ length: N + 1 }, () => new Int32Array(K));
+  const floorAvg = Math.floor(N / K), ceilAvg = Math.ceil(N / K);
+  let used = 0, best = o.initBest, bestColor = null, nodes = 0, aborted = false, stopped = false;
+  const steps = o.record ? [] : null;
+  let truncated = false;
+  const rec = (type, x) => {
+    if (!steps) return;
+    if (steps.length >= o.maxSteps) { truncated = true; return; }
+    steps.push(Object.assign({ type, color: Int8Array.from(color), size: Array.from(size), used, best, nodes }, x));
+  };
+  if (steps) rec("start", { order: order.slice() });
+
+  function search(idx, curMax) {
+    if (++nodes > o.budget) { aborted = true; return; }
+    const remaining = N - idx;
+    if (o.forward && remaining < K - used) { rec("few", { idx, remaining }); return; }
+    let cap = null, minUB = floorAvg, maxLB = 0;
+    if (o.forward || o.bound) {
+      cap = caps[idx];
+      let capSum = 0;
+      for (let c = 0; c < K; c++) {
+        let free = 0;
+        for (let u = 0; u < N; u++) if (color[u] < 0 && cnt[c * N + u] === 0) free++;
+        cap[c] = size[c] + free; capSum += cap[c];
+      }
+      if (o.forward) {
+        if (used === K) {
+          for (let u = 0; u < N; u++) {
+            if (color[u] >= 0) continue;
+            let fits = false;
+            for (let c = 0; c < K && !fits; c++) if (cnt[c * N + u] === 0) fits = true;
+            if (!fits) { rec("stuck", { idx, u, cap: Array.from(cap) }); return; }
+          }
+        }
+        if (capSum < N) { rec("capsum", { idx, cap: Array.from(cap) }); return; }
+      }
+    }
+    if (o.bound) {
+      for (let c = 0; c < K; c++) if (cap[c] < minUB) minUB = cap[c];
+      maxLB = waterFill(cap, curMax > ceilAvg ? curMax : ceilAvg, N, K);
+      if (maxLB - minUB >= best) { rec("bound", { idx, cap: Array.from(cap), minUB, maxLB }); return; }
+      if (idx === N) { best = maxLB - minUB; bestColor = Int8Array.from(color); rec("best", { idx, cap: Array.from(cap), minUB, maxLB, best }); return; }
+    } else if (idx === N) {
+      if (used === K) {
+        let mx = 0, mn = N;
+        for (let c = 0; c < K; c++) { if (size[c] > mx) mx = size[c]; if (size[c] < mn) mn = size[c]; }
+        if (mx - mn < best) { best = mx - mn; bestColor = Int8Array.from(color); rec("best", { idx, best }); }
+      }
+      return;
+    }
+
+    const v = order[idx];
+    if (steps) rec("pick", { idx, v, cap: cap ? Array.from(cap) : null, minUB, maxLB });
+    const limit = o.symmetry ? (used < K ? used : K - 1) : K - 1;
+    const cand = [];
+    for (let c = 0; c <= limit; c++) {
+      if (cnt[c * N + v] > 0) { if (steps) rec("clash", { idx, v, c }); continue; }
+      cand.push(c);
+    }
+    if (o.smallestFirst) cand.sort((a, b) => size[a] - size[b]);   /* stable, like the insertion sort */
+
+    for (const c of cand) {
+      const isNew = size[c] === 0;
+      color[v] = c; size[c]++;
+      for (const u of nb[v]) cnt[c * N + u]++;
+      if (isNew) used++;
+      if (steps) rec("place", { idx, v, c });
+      search(idx + 1, size[c] > curMax ? size[c] : curMax);
+      color[v] = -1; size[c]--;
+      for (const u of nb[v]) cnt[c * N + u]--;
+      if (isNew) used--;
+      if (best === o.target || aborted) {
+        if (best === o.target && !stopped) { stopped = true; rec("stop", { idx, v }); }
+        return;
+      }
+    }
+    if (steps) rec("back", { idx, v });
+  }
+
+  search(0, 0);
+  const found = best < o.initBest && !aborted;
+  return { found, color: found ? bestColor : null, best, nodes, aborted, steps, truncated, order };
+}
+
+function solveBnb(g, k, record) {
+  return runSearch(g, k, { degreeOrder: true, smallestFirst: true, symmetry: true, forward: true, bound: true,
+    initBest: g.n + 1, target: spreadLowerBound(g.n, k), budget: 2e8, record: !!record, maxSteps: 1500 });
+}
+
+/* bnb.c canonicalize: lexicographically smallest optimal coloring */
+function canonicalize(g, k, color) {
+  const size = new Array(k).fill(0);
+  for (let v = 0; v < g.n; v++) size[color[v]]++;
+  const opt = Math.max(...size) - Math.min(...size);
+  const r = runSearch(g, k, { degreeOrder: false, smallestFirst: false, symmetry: true, forward: true, bound: true,
+    initBest: opt + 1, target: opt, budget: 2e7, record: false });
+  if (r.found) return r.color;
+  const relabel = new Array(k).fill(-1), out = new Int8Array(g.n);   /* fallback: rename colors by first use */
+  let next = 0;
+  for (let v = 0; v < g.n; v++) { const c = color[v]; if (relabel[c] < 0) relabel[c] = next++; out[v] = relabel[c]; }
+  return out;
+}
+
+/* dp.c */
+function dpTables(g) {
+  const n = g.n, count = 1 << n;
+  const indep = new Uint8Array(count), pc = new Uint8Array(count);
+  indep[0] = 1;
+  for (let S = 1; S < count; S++) {
+    pc[S] = pc[S & (S - 1)] + 1;
+    const v = 31 - Math.clz32(S & -S);
+    indep[S] = indep[S & (S - 1)] && !(g.mask[v] & S) ? 1 : 0;
+  }
+  return { indep, pc, f: new Uint32Array(count) };
+}
+function dpFill(t, n, k, lo, hi) {
+  const { indep, pc, f } = t, full = (1 << n) - 1, jmask = (1 << (k + 1)) - 1;
+  f[0] = 1;
+  for (let S = 1; S <= full; S++) {
+    const low = S & -S, rest = S ^ low;
+    let acc = 0, sub = rest;
+    for (;;) {
+      const T = sub | low, sz = pc[T];
+      if (sz >= lo && sz <= hi && indep[T]) acc |= f[S ^ T] << 1;
+      if (sub === 0) break;
+      sub = (sub - 1) & rest;
+    }
+    f[S] = acc & jmask;
+  }
+  return (f[full] >> k) & 1;
+}
+function dpRebuild(t, n, k, lo, hi, onTake) {
+  const { indep, pc, f } = t, color = new Int8Array(n);
+  let S = (1 << n) - 1, j = k, c = 0;
+  while (S) {
+    const low = S & -S, rest = S ^ low;
+    let sub = rest;
+    for (;;) {
+      const T = sub | low, sz = pc[T];
+      if (sz >= lo && sz <= hi && indep[T] && ((f[S ^ T] >> (j - 1)) & 1)) {
+        for (let v = 0; v < n; v++) if (T & (1 << v)) color[v] = c;
+        if (onTake) onTake(S, T, j, c, Int8Array.from(color));
+        S ^= T; j--; c++;
+        break;
+      }
+      if (sub === 0) break;
+      sub = (sub - 1) & rest;
+    }
+  }
+  return color;
+}
+/* solve_dp; onEvent (optional) sees every step for the animation */
+function solveDp(g, k, onEvent) {
+  const n = g.n, t = dpTables(g), emit = onEvent || (() => {});
+  emit({ type: "legal", t });
+  const ok0 = dpFill(t, n, k, 1, n);
+  emit({ type: "pass", lo: 1, hi: n, d: null, ok: !!ok0, t });
+  if (!ok0) { emit({ type: "none" }); return null; }
+  const floorAvg = Math.floor(n / k), ceilAvg = Math.ceil(n / k);
+  for (let d = spreadLowerBound(n, k); ; d++) {
+    for (let lo = floorAvg; lo >= 1 && lo + d >= ceilAvg; lo--) {
+      const ok = dpFill(t, n, k, lo, lo + d);
+      emit({ type: "pass", lo, hi: lo + d, d, ok: !!ok, t });
+      if (ok) {
+        const color = dpRebuild(t, n, k, lo, lo + d, (S, T, j, c, col) => emit({ type: "take", S, T, j, c, color: col, lo, hi: lo + d, d }));
+        emit({ type: "done", color, d });
+        return color;
+      }
+    }
+  }
+}
+
+/* main.c */
+function solve(g, k) {
+  const n = g.n;
+  if (k > n) return { found: false, color: null, method: "Easy case: k > n", output: NONE_TEXT };
+  let color = null, method;
+  if (k === n) { color = Int8Array.from({ length: n }, (_, v) => v); method = "Easy case: k = n"; }
+  else if (n <= DP_AUTO_N) { color = solveDp(g, k); method = "Dynamic programming"; }
+  else { const r = solveBnb(g, k); color = r.color; method = "Backtracking"; }
+  if (color && k < n) color = canonicalize(g, k, color);
+  return { found: !!color, color, method, output: formatOutput(n, k, color) };
+}
+/* SOLVER:END */
+
+/* ===================== page ===================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
+const fmt = x => x.toLocaleString("en-US");
+
+const FILLS = [["#facc15", "#422006"], ["#3b82f6", "#ffffff"], ["#ef4444", "#ffffff"], ["#22c55e", "#052e16"], ["#f97316", "#ffffff"],
+  ["#a855f7", "#ffffff"], ["#ec4899", "#ffffff"], ["#92400e", "#ffffff"], ["#27272a", "#ffffff"], ["#ffffff", "#18181b"], ["#a1a1aa", "#18181b"], ["#06b6d4", "#083344"]];
+const fillOf = c => c < FILLS.length ? FILLS[c][0] : `hsl(${(c * 47) % 360} 65% 52%)`;
+const inkOf = c => c < FILLS.length ? FILLS[c][1] : "#ffffff";
+
+/* ---------- presets ---------- */
+const range = n => [...Array(n).keys()];
+const cyc = n => range(n).map(i => [i, (i + 1) % n]);
+const circle = (n, r = 1, start = -Math.PI / 2) => range(n).map(i => [r * Math.cos(start + 2 * Math.PI * i / n), r * Math.sin(start + 2 * Math.PI * i / n)]);
+const flipY = pts => pts.map(([x, y]) => [x, -y]);
+const GRAPH20_EDGES = (() => {
+  const names = "ABCDEFGHIJKLMNOPQRST";
+  return ("AB AF AG BC BD BE CD CL DE DH DM EH EF EJ FG FI FJ GI GK HM HN IJ IK IO JN JO JQ KO KR LM LS MN MP MS NP OQ OR PQ PS QR QT RT ST")
+    .split(" ").map(e => [names.indexOf(e[0]), names.indexOf(e[1])]);
+})();
+const PRESETS = {
+  sample6: { label: "Sample graph", group: "Examples", k: 3, n: 6,
+    edges: [[0, 1], [0, 2], [1, 2], [1, 3], [2, 4], [2, 5], [3, 5], [4, 5]],
+    pos: flipY([[1, 1], [2, 1], [0, 0], [3, 0], [1, -1], [2, -1]]) },
+  tree8: { label: "Tree (8 vertices)", group: "Examples", k: 3, n: 8,
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [2, 5], [2, 6], [2, 7]],
+    pos: flipY([[0, 0], [0.9, -0.9], [1.8, 0.4], [2.8, 1.3], [4.1, 1.3], [3.4, 0.3], [2.9, -0.6], [2.4, -1.5]]) },
+  graph20: { label: "20-vertex graph", group: "Examples", k: 4, n: 20, edges: GRAPH20_EDGES,
+    pos: [[5.07, 0.47], [2.8, 0.9], [0.96, 2.03], [2.11, 2.13], [3.8, 1.96], [5.62, 1.7], [6.85, 1.53], [2.6, 2.95], [6.76, 2.71], [5.26, 3.28],
+      [7.54, 3.53], [0.82, 4.11], [2.11, 4.14], [3.47, 4.02], [6.61, 4.18], [3.36, 5.27], [5.31, 5.13], [6.52, 5.4], [2.32, 5.62], [4.6, 6.3]] },
+  petersen: { label: "Petersen graph", group: "More graphs", k: 3, n: 10,
+    edges: [...range(5).map(i => [i, (i + 1) % 5]), ...range(5).map(i => [i, i + 5]), ...range(5).map(i => [5 + i, 5 + (i + 2) % 5])],
+    pos: [...circle(5, 1), ...circle(5, 0.48)] },
+  c5: { label: "Odd cycle", group: "More graphs", k: 3, n: 5, edges: cyc(5), pos: circle(5) },
+  k35: { label: "Complete bipartite K3,5", group: "More graphs", k: 2, n: 8,
+    edges: [0, 1, 2].flatMap(i => [3, 4, 5, 6, 7].map(j => [i, j])),
+    pos: [[0, 1], [0, 2], [0, 3], [2.2, 0], [2.2, 1], [2.2, 2], [2.2, 3], [2.2, 4]] },
+  grid: { label: "Grid 5 × 6", group: "More graphs", k: 2, n: 30,
+    edges: range(30).flatMap(v => { const i = Math.floor(v / 6), j = v % 6, e = []; if (j < 5) e.push([v, v + 1]); if (i < 4) e.push([v, v + 6]); return e; }),
+    pos: range(30).map(v => [v % 6, Math.floor(v / 6)]) },
+  star39: { label: "Star with 39 leaves", group: "More graphs", k: 3, n: 40,
+    edges: range(39).map(i => [0, i + 1]), pos: [[0, 0], ...circle(39)] },
+  random: { label: "Random graph", group: "More graphs", hint: "7–12 vertices", k: 3, n: 10 },
+};
+
+/* deterministic random numbers */
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function randomEdges(n, seed) {
+  const rnd = mulberry32(seed), set = new Set(), edges = [];
+  const add = (a, b) => { if (a === b) return; const key = a < b ? a * 100 + b : b * 100 + a; if (!set.has(key)) { set.add(key); edges.push([Math.min(a, b), Math.max(a, b)]); } };
+  for (let v = 1; v < n; v++) add(v, Math.floor(rnd() * v));          /* spanning tree keeps it connected */
+  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) if (rnd() < 0.22) add(a, b);
+  return edges;
+}
+/* simple force layout for graphs without fixed positions */
+function forceLayout(g, seed = 7) {
+  const n = g.n, rnd = mulberry32(seed);
+  const p = circle(n).map(([x, y]) => [x + (rnd() - .5) * .05, y + (rnd() - .5) * .05]);
+  if (n <= 3) return p;
+  const kk = Math.sqrt(4 / n);
+  let temp = 0.25;
+  for (let it = 0; it < 300; it++) {
+    const d = p.map(() => [0, 0]);
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+      let dx = p[a][0] - p[b][0], dy = p[a][1] - p[b][1]; const dist = Math.max(Math.hypot(dx, dy), 1e-3);
+      const f = kk * kk / dist; dx /= dist; dy /= dist;
+      d[a][0] += dx * f; d[a][1] += dy * f; d[b][0] -= dx * f; d[b][1] -= dy * f;
+    }
+    for (const [a, b] of g.edges) {
+      let dx = p[a][0] - p[b][0], dy = p[a][1] - p[b][1]; const dist = Math.max(Math.hypot(dx, dy), 1e-3);
+      const f = dist * dist / kk; dx /= dist; dy /= dist;
+      d[a][0] -= dx * f; d[a][1] -= dy * f; d[b][0] += dx * f; d[b][1] += dy * f;
+    }
+    for (let v = 0; v < n; v++) {
+      const len = Math.max(Math.hypot(d[v][0], d[v][1]), 1e-9), s = Math.min(len, temp) / len;
+      p[v][0] += d[v][0] * s; p[v][1] += d[v][1] * s;
+    }
+    temp *= 0.985;
+  }
+  return p;
+}
+
+/* ---------- Select component (shadcn / Radix behavior) ---------- */
+const CHEVRON = '<svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const CHECK = '<svg class="check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+let presetSelect;
+class Select {
+  constructor(root, items, labelId, onChange) {
+    this.root = root; this.items = items; this.onChange = onChange; this.value = null; this.active = null;
+    const id = root.id;
+    root.innerHTML = `<button type="button" class="sel-trigger" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}-list" aria-labelledby="${labelId} ${id}-val">
+      <span class="val" id="${id}-val"></span>${CHEVRON}</button><div class="sel-content" role="listbox" id="${id}-list" aria-labelledby="${labelId}" hidden></div>`;
+    this.btn = root.querySelector(".sel-trigger"); this.list = root.querySelector(".sel-content"); this.valEl = root.querySelector(".val");
+    this.list.innerHTML = items.map((it, i) => it.heading
+      ? `${i ? '<div class="sel-sep" role="separator"></div>' : ""}<div class="sel-group" role="presentation">${esc(it.heading)}</div>`
+      : `<div class="sel-item" role="option" id="${id}-opt-${it.value}" data-value="${it.value}" aria-selected="false" aria-disabled="${!!it.disabled}"><span>${esc(it.label)}</span>${it.hint ? `<span class="hint">${esc(it.hint)}</span>` : ""}${CHECK}</div>`).join("");
+    this.btn.addEventListener("click", () => this.isOpen() ? this.close() : this.open());
+    this.btn.addEventListener("keydown", e => this.onKey(e));
+    this.list.addEventListener("pointermove", e => { const el = e.target.closest(".sel-item"); if (el) this.setActive(el.dataset.value, false); });
+    this.list.addEventListener("click", e => { const el = e.target.closest(".sel-item"); if (el && el.getAttribute("aria-disabled") !== "true") this.choose(el.dataset.value); });
+    document.addEventListener("pointerdown", e => { if (this.isOpen() && !root.contains(e.target)) this.close(false); });
+  }
+  options() { return this.items.filter(it => !it.heading && !it.disabled); }
+  isOpen() { return !this.list.hidden; }
+  open() {
+    this.list.hidden = false; this.btn.setAttribute("aria-expanded", "true");
+    this.setActive(this.value, true);
+  }
+  close(focus = true) {
+    this.list.hidden = true; this.btn.setAttribute("aria-expanded", "false"); this.btn.removeAttribute("aria-activedescendant");
+    if (focus) this.btn.focus();
+  }
+  setActive(v, scroll) {
+    this.active = v;
+    for (const el of this.list.querySelectorAll(".sel-item")) el.toggleAttribute("data-active", el.dataset.value === v);
+    const el = this.list.querySelector(`[data-value="${v}"]`);
+    if (el) { this.btn.setAttribute("aria-activedescendant", el.id); if (scroll) el.scrollIntoView({ block: "nearest" }); }
+  }
+  move(d) {
+    const opts = this.options(), i = opts.findIndex(o => o.value === this.active);
+    const j = d === "first" ? 0 : d === "last" ? opts.length - 1 : Math.max(0, Math.min(opts.length - 1, (i < 0 ? 0 : i + d)));
+    this.setActive(opts[j].value, true);
+  }
+  onKey(e) {
+    const k = e.key;
+    if (!this.isOpen()) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(k)) { e.preventDefault(); e.stopPropagation(); this.open(); }
+      return;
+    }
+    e.stopPropagation();
+    if (k === "ArrowDown") { e.preventDefault(); this.move(1); }
+    else if (k === "ArrowUp") { e.preventDefault(); this.move(-1); }
+    else if (k === "Home") { e.preventDefault(); this.move("first"); }
+    else if (k === "End") { e.preventDefault(); this.move("last"); }
+    else if (k === "Enter" || k === " ") { e.preventDefault(); if (this.active) this.choose(this.active); }
+    else if (k === "Escape") { e.preventDefault(); this.close(); }
+    else if (k === "Tab") this.close(false);
+    else if (k.length === 1 && /\S/.test(k)) {   /* typeahead: jump to the next option starting with this letter */
+      const opts = this.options(), i = opts.findIndex(o => o.value === this.active);
+      const rot = [...opts.slice(i + 1), ...opts.slice(0, i + 1)];
+      const hit = rot.find(o => o.label.toLowerCase().startsWith(k.toLowerCase()));
+      if (hit) this.setActive(hit.value, true);
+    }
+  }
+  choose(v) {
+    const changed = v !== this.value;
+    this.close();
+    if (changed) { this.setValue(v); this.onChange(v); }
+  }
+  setValue(v) {
+    this.value = v;
+    const it = this.items.find(x => x.value === v);
+    this.valEl.textContent = it ? it.label : "";
+    for (const el of this.list.querySelectorAll(".sel-item")) el.setAttribute("aria-selected", String(el.dataset.value === v));
+  }
+  setDisabled(v, off) {
+    const it = this.items.find(x => x.value === v); if (it) it.disabled = off;
+    const el = this.list.querySelector(`[data-value="${v}"]`); if (el) el.setAttribute("aria-disabled", String(off));
+  }
+}
+
+/* ---------- state ---------- */
+const state = { preset: "sample6", g: null, k: 3, pos: null, xy: null, warnings: [], result: null, seed: 421 };
+
+function toInputText(k, g) {
+  return `${k}\n${g.n}\n` + g.adj.map(r => Array.from(r).join(" ")).join("\n") + "\n";
+}
+
+/* scale positions into the SVG box */
+function fitPositions(pos) {
+  const W = 640, H = 420, pad = 34;
+  const xs = pos.map(p => p[0]), ys = pos.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const sx = x1 > x0 ? (W - 2 * pad) / (x1 - x0) : 1, sy = y1 > y0 ? (H - 2 * pad) / (y1 - y0) : 1;
+  const s = Math.min(sx, sy, 160);
+  const ox = (W - (x1 - x0) * s) / 2, oy = (H - (y1 - y0) * s) / 2;
+  return pos.map(([x, y]) => [ox + (x - x0) * s, oy + (y - y0) * s]);
+}
+
+/* ---------- graph drawing ---------- */
+function drawGraph(svg, opt = {}) {
+  const g = state.g, xy = state.xy, n = g.n;
+  const r = n <= 8 ? 19 : n <= 12 ? 17 : n <= 22 ? 14 : n <= 40 ? 10.5 : 8;
+  const fs = n <= 12 ? 13 : n <= 22 ? 11.5 : n <= 40 ? 9 : 7.5;
+  const color = opt.color || null, hot = opt.hot || [], focus = opt.focus, dim = opt.dim;
+  const hotSet = new Set(hot.map(([a, b]) => a < b ? `${a}-${b}` : `${b}-${a}`));
+  let h = "";
+  for (const [a, b] of g.edges) {
+    let cls = hotSet.has(`${a}-${b}`) ? "hot" : (focus !== undefined && (a === focus || b === focus)) ? "focus" : "";
+    if (dim && (dim.has(a) || dim.has(b)) && !cls) cls = "dim";
+    h += `<line class="${cls}" x1="${xy[a][0].toFixed(1)}" y1="${xy[a][1].toFixed(1)}" x2="${xy[b][0].toFixed(1)}" y2="${xy[b][1].toFixed(1)}"/>`;
+  }
+  for (let v = 0; v < n; v++) {
+    const c = color ? color[v] : -1, [x, y] = xy[v];
+    const filled = c >= 0;
+    const cls = dim && dim.has(v) ? ' class="dimmed"' : "";
+    const pop = opt.pop === v ? " pop" : "";
+    h += `<g${cls}><circle class="node${filled ? "" : " empty"}${pop}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${filled ? fillOf(c) : ""}"><title>vertex ${v + 1}${filled ? " · " + colorName(c) : ""}</title></circle>`;
+    h += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${fs}" fill="${filled ? inkOf(c) : "var(--foreground)"}">${v + 1}</text></g>`;
+  }
+  for (const [v, kind] of (opt.rings || [])) {
+    const [x, y] = xy[v];
+    h += `<circle class="ring ${kind || ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r + 4.5}"/>`;
+  }
+  svg.innerHTML = h;
+}
+
+function groupsHTML(k, color, n) {
+  if (!color) return "";
+  const members = Array.from({ length: k }, () => []);
+  for (let v = 0; v < n; v++) members[color[v]].push(v + 1);
+  const order = [...Array(k).keys()].sort((a, b) => members[b].length - members[a].length || colorName(a).localeCompare(colorName(b)));
+  return order.slice(0, 16).map(c => `<div class="group-line"><i class="dot" style="background:${fillOf(c)}"></i><span class="name">${esc(colorName(c))}</span><span class="badge badge-secondary">${members[c].length}</span><span class="members">${members[c].join(", ")}</span></div>`).join("")
+    + (k > 16 ? `<div class="small muted">…and ${k - 16} more colors</div>` : "");
+}
+
+/* ---------- code panels ---------- */
+const BT_CODE = [
+  "search(i):",
+  "  if vertices left < colors unused: return",
+  "  cap[c] = |c| + uncolored that fit in c",
+  "  if a vertex touches every group: return",
+  "  bound = min biggest - max smallest",
+  "  if bound >= best: return   // prune",
+  "  if all colored: best = bound, save, return",
+  "  v = next vertex (most neighbors)",
+  "  for c in used + new, smallest first:",
+  "    if v has a neighbor in c: skip c",
+  "    put v in c",
+  "    search(i + 1)",
+  "    take v out of c",
+  "    if best == best possible: stop",
+];
+const DP_CODE = [
+  "solve_dp():",
+  "  legal[S] = no edge inside S",
+  "  if not fill(1, n): no answer",
+  "  for d = best score, +1, +2, ...:",
+  "    for each lo with sizes in [lo, lo+d]:",
+  "      if fill(lo, lo + d): rebuild(), stop",
+  "fill(lo, hi):",
+  "  f[empty set] = {0 groups}",
+  "  for each set S, smallest first:",
+  "    for legal T in S with S's 1st vertex",
+  "        and lo <= |T| <= hi:",
+  "      f[S] += (counts in f[S - T]) + 1",
+  "  return k in f[all vertices]",
+  "rebuild():",
+  "  S = all vertices",
+  "  while S is not empty:",
+  "    pick legal T, S - T splits into j-1",
+  "    give T the next color, S = S - T",
+];
+const KW = /\b(if|for|each|while|return|not|stop|skip|in|and)\b/g;
+function renderCode(el, lines, hit = [], ev = [], notes = {}, tone = "") {
+  el.innerHTML = lines.map((src, i) => {
+    const k = i + 1, cm = src.indexOf("//");
+    const body = cm >= 0 ? esc(src.slice(0, cm)).replace(KW, '<span class="kw">$1</span>') + `<span class="cm">${esc(src.slice(cm))}</span>` : esc(src).replace(KW, '<span class="kw">$1</span>');
+    const cls = hit.includes(k) ? ` hit ${tone}` : ev.includes(k) ? " ev" : "";
+    return `<div class="ln${cls}"><u>${k}</u><code>${body}</code><em>${esc(notes[k] || "")}</em></div>`;
+  }).join("");
+  const first = el.querySelector(".hit");
+  if (first) { const top = first.offsetTop - el.clientHeight / 2; if (top > el.scrollTop + 40 || top < el.scrollTop - 40) el.scrollTop = Math.max(0, top); }
+}
+const varsHTML = list => list.map(([k, v]) => { v = String(v); return `<div class="var"><span>${esc(k)}</span><b class="${v === "–" ? "nil" : ""}" title="${esc(v)}">${esc(v)}</b></div>`; }).join("");
+
+/* ---------- step player ---------- */
+const SPEEDS = [[700, "1×"], [300, "2×"], [90, "4×"]];
+class Player {
+  constructor(root, render) {
+    this.render = render; this.steps = []; this.i = 0; this.timer = null; this.sp = 0;
+    root.innerHTML = `<button class="btn btn-outline btn-sm" data-r="back" title="Previous step">Back</button>
+      <button class="btn btn-default btn-sm" data-r="play" style="min-width:68px">Play</button>
+      <button class="btn btn-outline btn-sm" data-r="next" title="Next step">Next</button>
+      <button class="btn btn-ghost btn-sm" data-r="speed" title="Play speed">1×</button>
+      <input type="range" data-r="scrub" min="0" value="0" aria-label="Step">
+      <span class="pos" data-r="pos"></span>`;
+    const q = r => root.querySelector(`[data-r="${r}"]`);
+    this.el = { back: q("back"), play: q("play"), next: q("next"), speed: q("speed"), scrub: q("scrub"), pos: q("pos") };
+    this.el.back.onclick = () => this.step(-1);
+    this.el.next.onclick = () => this.step(1);
+    this.el.play.onclick = () => this.toggle();
+    this.el.speed.onclick = () => { this.sp = (this.sp + 1) % SPEEDS.length; this.el.speed.textContent = SPEEDS[this.sp][1]; if (this.timer) { this.stop(); this.toggle(); } };
+    this.el.scrub.oninput = e => { this.stop(); this.go(+e.target.value); };
+  }
+  load(steps) { this.stop(); this.steps = steps; this.el.scrub.max = Math.max(0, steps.length - 1); this.go(0); }
+  go(i) {
+    if (!this.steps.length) return;
+    this.prev = this.i; this.i = Math.max(0, Math.min(this.steps.length - 1, i));
+    this.render(this.steps[this.i], this.i, this.i === this.prev + 1);
+    this.el.back.disabled = this.i === 0; this.el.next.disabled = this.i === this.steps.length - 1;
+    this.el.scrub.value = this.i; this.el.pos.textContent = `${this.i + 1} / ${this.steps.length}`;
+    if (this.i === this.steps.length - 1) this.stop();
+  }
+  step(d) { this.stop(); this.go(this.i + d); }
+  stop() { clearInterval(this.timer); this.timer = null; this.el.play.textContent = "Play"; }
+  toggle() {
+    if (this.timer) return this.stop();
+    if (this.i === this.steps.length - 1) this.go(0);
+    this.el.play.textContent = "Pause";
+    this.timer = setInterval(() => this.go(this.i + 1), SPEEDS[this.sp][0]);
+  }
+}
+
+/* ---------- backtracking view ---------- */
+let btPlayer, dpPlayer;
+const popcount = m => { let c = 0; while (m) { m &= m - 1; c++; } return c; };
+const setList = (mask, n) => { const r = []; for (let v = 0; v < n; v++) if (mask & (1 << v)) r.push(v + 1); return r; };
+
+function buildBtSteps() {
+  const g = state.g, k = state.k, n = g.n;
+  if (k > n || k === n) return { easy: true };
+  const r = solveBnb(g, k, true);
+  const steps = r.steps;
+  if (r.truncated) steps.push({ type: "trunc", color: r.color || new Int8Array(n).fill(-1), size: [], nodes: r.nodes, best: r.best });
+  steps.push({ type: "done", color: r.color || new Int8Array(n).fill(-1), found: r.found, nodes: r.nodes, best: r.best, size: [] });
+  if (r.found) {
+    const canon = canonicalize(g, k, r.color);
+    steps.push({ type: "canon", color: canon, found: true, nodes: r.nodes, best: r.best, size: [] });
+  }
+  return { steps, total: r.nodes, truncated: r.truncated };
+}
+
+function renderBars(el, k, n, size, cap) {
+  const show = Math.min(k, 12);
+  let h = "";
+  for (let c = 0; c < show; c++) {
+    const s = size[c] || 0, cp = cap ? cap[c] : null;
+    h += `<div class="gbar"><span class="nm"><i class="dot" style="background:${fillOf(c)}"></i>${esc(colorName(c))}</span>
+      <span class="track">${cp !== null ? `<s class="cap" style="width:${(cp / n * 100).toFixed(1)}%"></s>` : ""}<s class="sz" style="width:${(s / n * 100).toFixed(1)}%;background:${fillOf(c)}"></s></span>
+      <span class="nums">${s}${cp !== null ? ` (max ${cp})` : ""}</span></div>`;
+  }
+  if (k > show) h += `<div class="small muted">…and ${k - show} more colors</div>`;
+  el.innerHTML = h;
+}
+
+function renderBt(s, i, forward) {
+  const g = state.g, k = state.k, n = g.n, best = s.best > n ? "none yet" : s.best;
+  const bestTxt = s.best > n ? "none yet" : String(s.best);
+  const opt = { color: s.color, rings: [] };
+  let hit = [], ev = [], notes = {}, tone = "", tag = "", msg = "";
+  const vname = v => `vertex ${v + 1}`;
+  switch (s.type) {
+    case "start":
+      hit = [1]; tag = "start";
+      msg = `Color the vertices in this order (most neighbors first): ${s.order.map(v => v + 1).join(", ")}.`;
+      break;
+    case "pick": {
+      hit = [8]; ev = [2, 3, 4, 5, 6, 7];
+      opt.rings.push([s.v, "pick"]); opt.focus = s.v;
+      const b = s.maxLB - s.minUB;
+      notes[6] = `${b} < ${bestTxt}`; notes[8] = `v = ${s.v + 1}`;
+      tag = "next vertex";
+      msg = `No pruning rule fires here (this branch could still score ${b}). Next up: ${vname(s.v)}.`;
+      break;
+    }
+    case "clash": {
+      hit = [10]; ev = [9]; tone = "bad";
+      opt.rings.push([s.v, "bad"]);
+      opt.hot = g.nbrs[s.v].filter(u => s.color[u] === s.c).map(u => [s.v, u]);
+      notes[10] = `touches ${colorName(s.c)}`;
+      tag = "clash";
+      msg = `${colorName(s.c)} is out: ${vname(s.v)} already has a ${colorName(s.c)} neighbor.`;
+      break;
+    }
+    case "place":
+      hit = [11, 12]; ev = [9, 10];
+      opt.rings.push([s.v, ""]); opt.focus = s.v; if (forward) opt.pop = s.v;
+      notes[11] = `${s.v + 1} → ${colorName(s.c)}`;
+      tag = "try";
+      msg = `Put ${vname(s.v)} in the ${colorName(s.c)} group and keep going.`;
+      break;
+    case "few":
+      hit = [2]; tone = "bad"; tag = "dead end";
+      notes[2] = `${s.remaining} left, ${k - s.used} unused`;
+      msg = `Only ${s.remaining} vertices are left but ${k - s.used} colors are still unused. Some color would stay empty, so go back.`;
+      break;
+    case "capsum":
+      hit = [3]; tone = "bad"; tag = "dead end";
+      msg = "The groups can't hold all the vertices anymore. Go back.";
+      break;
+    case "stuck":
+      hit = [3, 4]; tone = "bad"; tag = "stuck";
+      opt.rings.push([s.u, "bad"]);
+      opt.hot = g.nbrs[s.u].filter(u => s.color[u] >= 0).map(u => [s.u, u]);
+      notes[4] = `vertex ${s.u + 1}`;
+      msg = `${vname(s.u)} is stuck: it already touches every color group. Go back.`;
+      break;
+    case "bound": {
+      hit = [5, 6]; tone = "bad"; tag = "bound";
+      const b = s.maxLB - s.minUB;
+      notes[5] = `${s.maxLB} - ${s.minUB} = ${b}`; notes[6] = `${b} >= ${bestTxt}`;
+      msg = `Even in the best case this branch scores ${b} (biggest group at least ${s.maxLB}, smallest at most ${s.minUB}). That's no better than the best so far (${bestTxt}). Skip it.`;
+      break;
+    }
+    case "best":
+      hit = [7]; tone = "good"; tag = "new best";
+      notes[7] = `best = ${s.best}`;
+      msg = `Every vertex is colored. New best score: ${s.best}.`;
+      break;
+    case "back":
+      hit = [13]; ev = [9]; tag = "backtrack";
+      opt.rings.push([s.v, ""]);
+      msg = `No more colors to try for ${vname(s.v)}. Undo and go back to the previous vertex.`;
+      break;
+    case "stop":
+      hit = [14]; tone = "good"; tag = "stop";
+      notes[14] = `${s.best} is the best possible`;
+      msg = `Score ${s.best} is the best possible (${spreadLowerBound(n, k) === 0 ? "k divides n" : "k doesn't divide n"}), so nothing can beat it. Stop searching.`;
+      break;
+    case "trunc":
+      tag = "…";
+      msg = `The animation shows the first 1,500 steps. The full search took ${fmt(s.nodes)} steps.`;
+      break;
+    case "done":
+      tone = "good"; tag = "done";
+      msg = s.found ? `Search finished after ${fmt(s.nodes)} steps. Best score: ${s.best}.` : `Search finished after ${fmt(s.nodes)} steps. No coloring uses all ${k} colors, so: “${NONE_TEXT}.”`;
+      if (!s.found) opt.color = null;
+      break;
+    case "canon":
+      tone = "good"; tag = "output";
+      msg = "Finally the program picks the “first” best coloring (vertex 1 gets the earliest color it can, then vertex 2, …). This is what it prints.";
+      break;
+  }
+  drawGraph($("btGraph"), opt);
+  renderCode($("btCode"), BT_CODE, hit, ev, notes, tone);
+  const sizes = s.size && s.size.length ? s.size : (() => { const z = new Array(k).fill(0); if (s.color) for (const c of s.color) if (c >= 0) z[c]++; return z; })();
+  renderBars($("btBars"), k, n, sizes, s.cap || null);
+  /* always one short line (never empty) so the graph above keeps its size */
+  $("btBound").textContent = s.cap && s.maxLB !== undefined && s.type !== "few"
+    ? `Bound: biggest group ≥ ${s.maxLB}, smallest ≤ ${s.minUB}, so this branch scores ≥ ${s.maxLB - s.minUB}.`
+    : "Bound: not computed at this step.";
+  const colored = s.color ? Array.from(s.color).filter(c => c >= 0).length : 0;
+  $("btVars").innerHTML = varsHTML([
+    ["vertex v", s.v !== undefined ? s.v + 1 : "–"], ["color c", s.c !== undefined ? colorName(s.c) : "–"],
+    ["bound", s.maxLB !== undefined ? s.maxLB - s.minUB : "–"],
+    ["best", best], ["colored", `${colored} / ${n}`], ["steps", fmt(s.nodes || 0)]]);
+  const tagCls = tone === "bad" ? "badge-danger" : tone === "good" ? "badge-success" : "badge-secondary";
+  $("btStatus").innerHTML = `<span class="badge ${tagCls} tag${FINAL_TAGS.has(tag) ? " final" : ""}">${esc(tag)}</span>${esc(msg)}`;
+}
+
+function setupBt() {
+  const g = state.g, k = state.k, n = g.n;
+  const info = buildBtSteps();
+  if (info.easy) {
+    drawGraph($("btGraph"), { color: state.result.color });
+    renderCode($("btCode"), BT_CODE);
+    $("btBars").innerHTML = ""; $("btBound").textContent = ""; $("btVars").innerHTML = "";
+    $("btStatus").innerHTML = `<span class="badge badge-secondary tag">easy case</span>${k > n ? "k is bigger than n, so some color would be empty. The program answers right away with no search." : "k equals n, so every vertex gets its own color. No search needed."}`;
+    $("btDesc").textContent = "No search needed for this input.";
+    $("btBadge").textContent = "";
+    btPlayer.load([{ type: "easy" }]);
+    btPlayer.render = () => {};
+    return;
+  }
+  btPlayer.render = renderBt;
+  $("btDesc").textContent = n <= DP_AUTO_N
+    ? "The program uses DP for this graph. This shows what backtracking (--bnb) would do."
+    : "The program uses this method for this graph.";
+  $("btBadge").textContent = `${fmt(info.total)} search steps${info.truncated ? " (first 1,500 shown)" : ""}`;
+  btPlayer.load(info.steps);
+}
+
+/* ---------- DP view ---------- */
+const DP_ANIM_MAX = 12, DP_TABLE_MAX = 6;
+function buildDpSteps() {
+  const g = state.g, k = state.k, n = g.n, steps = [];
+  const snapF = t => n <= DP_TABLE_MAX ? Uint32Array.from(t.f) : null;
+  let lastF = null;
+  solveDp(g, k, e => {
+    if (e.type === "legal") {
+      const counts = new Array(n + 1).fill(0);
+      for (let S = 1; S < (1 << n); S++) if (e.t.indep[S]) counts[e.t.pc[S]]++;
+      steps.push({ type: "legal", counts, indep: n <= DP_TABLE_MAX ? Uint8Array.from(e.t.indep) : null });
+    } else if (e.type === "pass") {
+      lastF = snapF(e.t);
+      steps.push({ type: "pass", lo: e.lo, hi: e.hi, d: e.d, ok: e.ok, f: lastF });
+    } else if (e.type === "take") {
+      steps.push({ type: "take", S: e.S, T: e.T, j: e.j, c: e.c, color: e.color, lo: e.lo, hi: e.hi, d: e.d, f: lastF });
+    } else steps.push(Object.assign({}, e));
+  });
+  const doneStep = steps.find(s => s.type === "done");
+  if (doneStep && k < n) steps.push({ type: "canon", color: canonicalize(g, k, doneStep.color), d: doneStep.d });
+  return steps;
+}
+
+function renderDp(s, i) {
+  const g = state.g, k = state.k, n = g.n, full = (1 << n) - 1;
+  const steps = dpPlayer.steps;
+  const passes = steps.slice(0, i + 1).filter(x => x.type === "pass");
+  const cur = s.type === "pass" ? s : null;
+  let hit = [], ev = [], notes = {}, tone = "", tag = "", msg = "";
+  const opt = { color: null, rings: [] };
+  const fmtSet = m => "{" + setList(m, n).join(", ") + "}";
+  switch (s.type) {
+    case "legal": {
+      hit = [2]; tag = "legal groups";
+      const total = s.counts.reduce((a, b) => a + b, 0);
+      notes[2] = `${total} legal groups`;
+      msg = `Mark every set of vertices with no edge inside it. There are ${fmt(total)} legal groups. ` +
+        s.counts.map((c, sz) => sz && c ? `${c} of size ${sz}` : "").filter(Boolean).join(", ") + ".";
+      break;
+    }
+    case "pass":
+      if (s.d === null) {
+        hit = [3]; ev = [7, 8, 9, 10, 11, 12, 13]; tag = s.ok ? "colorable" : "not colorable"; tone = s.ok ? "good" : "bad";
+        notes[3] = s.ok ? "yes" : "no";
+        msg = s.ok ? `First check, with any group sizes: can the graph be split into exactly ${k} legal groups? Yes. Now look for the most equal sizes.`
+          : `First check, with any group sizes: can the graph be split into exactly ${k} legal groups? No.`;
+      } else {
+        hit = [4, 5, 6]; ev = [7, 8, 9, 10, 11, 12, 13]; tag = s.ok ? "works" : "doesn't work"; tone = s.ok ? "good" : "bad";
+        notes[4] = `d = ${s.d}`; notes[5] = `lo = ${s.lo}`; notes[6] = s.ok ? "yes" : "no";
+        msg = `Can every group have between ${s.lo} and ${s.hi} vertices (score at most ${s.d})? ${s.ok ? "Yes! Read the groups out of the table." : "No. Try the next range."}`;
+      }
+      break;
+    case "take": {
+      hit = [16, 17, 18]; ev = [14, 15]; tag = "take group";
+      opt.color = Int8Array.from(s.color);
+      const placed = new Set(); for (let v = 0; v < n; v++) if (!(s.S & (1 << v)) || (s.T & (1 << v))) placed.add(v);
+      for (let v = 0; v < n; v++) if (!placed.has(v)) opt.color[v] = -1;
+      for (let v = 0; v < n; v++) if (s.T & (1 << v)) opt.rings.push([v, ""]);
+      notes[17] = `T = ${fmtSet(s.T)}`; notes[18] = colorName(s.c);
+      const rest = s.S ^ s.T;
+      msg = `Take ${fmtSet(s.T)} as the ${colorName(s.c)} group. ` + (rest ? `The rest ${fmtSet(rest)} still splits into ${s.j - 1} group${s.j - 1 === 1 ? "" : "s"}.` : "Every vertex is placed.");
+      break;
+    }
+    case "done":
+      tone = "good"; tag = "done"; opt.color = s.color;
+      msg = `All groups found. Score: ${s.d}.`;
+      break;
+    case "canon":
+      tone = "good"; tag = "output"; opt.color = s.color;
+      msg = "Finally the program picks the “first” best coloring (vertex 1 gets the earliest color it can, then vertex 2, …). This is what it prints.";
+      break;
+    case "none":
+      tone = "bad"; tag = "no answer"; hit = [3];
+      msg = `No way to split the graph into ${k} legal groups, so the program prints “${NONE_TEXT}.”`;
+      break;
+  }
+  drawGraph($("dpGraph"), opt);
+  renderCode($("dpCode"), DP_CODE, hit, ev, notes, tone);
+
+  /* ranges strip */
+  const allPasses = steps.filter(x => x.type === "pass");
+  $("dpRanges").innerHTML = allPasses.map((p, idx) => {
+    const seen = idx < passes.length, isCur = cur && p === cur;
+    const label = p.d === null ? "any size" : `${p.lo}–${p.hi}`;
+    const cls = !seen ? "" : isCur ? "cur" : p.ok ? "ok" : "no";
+    return `<span class="chip ${cls}" style="${seen ? "" : "opacity:.35"}">${label}${seen ? (p.ok ? " ✓" : " ✗") : ""}</span>`;
+  }).join("");
+  const lo = s.lo !== undefined ? s.lo : null, hi = s.hi !== undefined ? s.hi : null;
+  const avgLo = Math.floor(n / k), avgHi = Math.ceil(n / k);
+  $("dpSizeline").innerHTML = range(n).map(i => i + 1).map(z =>
+    `<div class="${lo !== null && z >= lo && z <= hi ? "in" : ""} ${z === avgLo || z === avgHi ? "avg" : ""}">${z}</div>`).join("");
+
+  /* subset table */
+  if (n <= DP_TABLE_MAX) {
+    const big = n > 6, tbl = $("dpTable");
+    tbl.style.setProperty("--tw", big ? "44px" : "48px"); tbl.style.setProperty("--th", big ? "38px" : "42px");
+    tbl.style.setProperty("--tsf", big ? "10px" : "11px"); tbl.style.setProperty("--tvf", big ? "12px" : "13px");
+    const bySize = Array.from({ length: n + 1 }, () => []);
+    for (let S = 0; S <= full; S++) bySize[popcount(S)].push(S);
+    let h = "", legal = 0;
+    bySize.forEach((sets, size) => {
+      h += `<div class="lat-row"><div class="lat-k">${size === 0 ? "empty set" : `${size} vert${size === 1 ? "ex" : "ices"}`}</div><div class="lat-tiles">`;
+      for (const S of sets) {
+        let cls = "t", val = "", title = `set ${S ? fmtSet(S) : "{} (empty)"}`;
+        if (s.type === "legal") { if (s.indep[S] && S) { cls += " on"; val = "✓"; legal++; title += ": legal group"; } }
+        else if (s.f) {
+          const bits = []; for (let j = 0; j <= k; j++) if ((s.f[S] >> j) & 1) bits.push(j);
+          val = bits.join(big ? "" : ",");
+          if (bits.length && S) { cls += " on"; title += `: splits into ${bits.join(" or ")} group${bits.length === 1 && bits[0] === 1 ? "" : "s"}`; }
+          else if (S) title += ": can't be split with these sizes";
+          if (S === full) cls += ((s.f[S] >> k) & 1) ? " okfull" : " full";
+          if (s.type === "take") { if (S === s.S) cls += " S"; if (S === (s.S ^ s.T) && S) cls += " R"; }
+        }
+        h += `<div class="${cls}" title="${esc(title)}"><span class="ts">${S ? setList(S, n).join("") : "{}"}</span><span class="tv">${val}</span></div>`;
+      }
+      h += `</div></div>`;
+    });
+    tbl.innerHTML = h;
+    if (s.type === "legal") note = `✓ marks a legal group: a set with no edge inside it. ${legal} of the ${fmt(1 << n)} sets are legal.`;
+    else if (s.type === "pass") note = `The number under a set is how many groups (sizes ${s.lo}–${s.hi}) it can be split into${n > 6 ? " (“23” means 2 or 3)" : ""}. Blank: it can't be split. The bottom tile is all vertices: green if ${k} is one of its numbers.`;
+    else if (s.type === "take") note = s.j > 1
+      ? `Outlined: the set S being split. Dark blue: the rest S − T, which must still split into ${s.j - 1} group${s.j - 1 === 1 ? "" : "s"}. Each step moves down the rows.`
+      : "Outlined: the last group. Nothing is left over, so every vertex has a color.";
+    else note = "Hover a square to see which set it is.";
+    $("dpTableNote").textContent = note;
+  }
+
+  const rest = s.type === "take" ? s.S ^ s.T : null;
+  const take = s.type === "take";
+  $("dpVars").innerHTML = varsHTML([
+    ["lo", lo ?? "–"], ["hi", hi ?? "–"], ["score d", s.d ?? "–"],
+    ["set S", take ? fmtSet(s.S) : "–"], ["group T", take ? fmtSet(s.T) : "–"], ["groups left j", take ? s.j : "–"]]);
+  const tagCls = tone === "bad" ? "badge-danger" : tone === "good" ? "badge-success" : "badge-secondary";
+  $("dpStatus").innerHTML = `<span class="badge ${tagCls} tag${FINAL_TAGS.has(tag) ? " final" : ""}">${esc(tag)}</span>${esc(msg)}`;
+}
+
+function setupDp() {
+  const g = state.g, k = state.k, n = g.n;
+  const off = k > n || k === n || n > DP_ANIM_MAX;
+  $("dpOff").hidden = !off; $("dpOn").hidden = off;
+  if (off) {
+    dpPlayer.load([{ type: "off" }]); dpPlayer.stop();
+    $("dpOffMsg").textContent = k > n ? "Easy case: k is bigger than n, so the program answers “no such a sequence exists” right away. No DP needed."
+      : k === n ? "Easy case: k equals n, so every vertex gets its own color. No DP needed."
+      : `The DP animation works on graphs with up to ${DP_ANIM_MAX} vertices (this one has ${n}). The program itself uses DP up to 16 vertices and backtracking above that. Pick a smaller graph, or see the Backtracking tab.`;
+    return;
+  }
+  $("dpTable").hidden = n > DP_TABLE_MAX;
+  $("dpTableDesc").textContent = `One tile per set of vertices (2^${n} = ${fmt(1 << n)} sets), grouped by size. Each tile shows the set's vertices on top and the table's answer below. The program fills the rows top to bottom: smaller sets first.`;
+  if (n > DP_TABLE_MAX) {
+    $("dpTableDesc").textContent = `The table has one entry per set of vertices: 2^${n} = ${fmt(1 << n)} sets for this graph.`;
+    $("dpTableNote").textContent = `That's too many tiles to read, so the table is drawn for graphs with up to ${DP_TABLE_MAX} vertices. Pick “Sample graph” or “Odd cycle” to watch it fill in.`;
+  }
+  $("dpDesc").textContent = n <= DP_AUTO_N ? "The program uses this method for this graph." : "";
+  const steps = buildDpSteps();
+  $("dpBadge").textContent = `${steps.filter(s => s.type === "pass").length} size ranges tried`;
+  dpPlayer.load(steps);
+}
+
+/* ---------- overview + KPIs ---------- */
+function renderOverview() {
+  const g = state.g, k = state.k, n = g.n, res = state.result;
+  drawGraph($("ovGraph"), { color: res.color });
+  $("ovGroups").innerHTML = res.color ? groupsHTML(k, res.color, n) : `<p class="small muted">No coloring: ${k > n ? "k is bigger than n, so some color would be empty." : `the graph can't be colored with ${k} colors using all of them.`}</p>`;
+  $("ovOut").textContent = res.output;
+  $("methodBadge").textContent = res.method;
+  /* score demo */
+  if (res.color) {
+    const sizes = new Array(k).fill(0); for (const c of res.color) sizes[c]++;
+    sizes.sort((a, b) => b - a);
+    const shown = sizes.length > 10 ? sizes.slice(0, 10) : sizes;
+    const gaps = [];
+    for (let i = 0; i + 1 < shown.length; i++) gaps.push(`|${shown[i]}-${shown[i + 1]}|`);
+    const sum = sizes.slice(0, -1).reduce((a, x, i) => a + Math.abs(x - sizes[i + 1]), 0);
+    $("scoreDemo").textContent = `sizes   (${sizes.join(",")})\n` + (k > 1 ? `gaps    ${gaps.join(" + ")}${sizes.length > 10 ? " + …" : ""} = ${sum}\nmax-min ${sizes[0]} - ${sizes[sizes.length - 1]} = ${sizes[0] - sizes[sizes.length - 1]}` : "only one group, so the score is 0");
+  } else {
+    $("scoreDemo").textContent = "No coloring for this input, so there is no score.\nTry a different k.";
+  }
+  /* KPIs */
+  const lb = spreadLowerBound(n, k);
+  $("kpiN").textContent = n; $("kpiNsub").textContent = state.preset === "custom" ? "your input" : PRESETS[state.preset].label;
+  $("kpiM").textContent = g.m;
+  const maxDeg = Math.max(0, ...g.deg);
+  $("kpiMsub").textContent = `most neighbors: ${maxDeg}`;
+  $("kpiK").textContent = k; $("kpiKsub").textContent = k > n ? "more colors than vertices" : `ideal group size ${(n / k).toFixed(n % k ? 2 : 0)}`;
+  $("kpiLB").textContent = k > n ? "–" : lb; $("kpiLBsub").textContent = k > n ? "no answer possible" : lb === 0 ? `k divides n` : `k doesn't divide n`;
+  if (res.color) {
+    const sizes = new Array(k).fill(0); for (const c of res.color) sizes[c]++; sizes.sort((a, b) => b - a);
+    const seq = `(${sizes.join(",")})`;
+    $("kpiAns").textContent = seq.length > 16 ? seq.slice(0, 15) + "…)" : seq;
+    $("kpiAns").title = seq;
+    const sc = sizes[0] - sizes[sizes.length - 1];
+    $("kpiAnsSub").textContent = `score ${sc}${sc === lb ? " · best possible" : ""}`;
+  } else { $("kpiAns").textContent = "none"; $("kpiAns").title = ""; $("kpiAnsSub").textContent = "no such a sequence exists"; }
+}
+
+/* ---------- speed tab ---------- */
+const ABL = [
+  { name: "Plain backtracking", short: "Plain", add: "Tries every color for every vertex, checks the score at the end.", o: { degreeOrder: false, smallestFirst: false, symmetry: false, forward: false, bound: false, stopEarly: false } },
+  { name: "+ stop at best possible", short: "+ stop early", add: "Stops as soon as the score hits 0 or 1.", o: { degreeOrder: false, smallestFirst: false, symmetry: false, forward: false, bound: false, stopEarly: true } },
+  { name: "+ symmetry breaking", short: "+ symmetry", add: "Only used colors or the next new one.", o: { degreeOrder: false, smallestFirst: false, symmetry: true, forward: false, bound: false, stopEarly: true } },
+  { name: "+ forward checking", short: "+ forward check", add: "Gives up when a vertex touches every group, or colors would stay empty.", o: { degreeOrder: false, smallestFirst: false, symmetry: true, forward: true, bound: false, stopEarly: true } },
+  { name: "+ bounding", short: "+ bounding", add: "Gives up when the branch can't beat the best score.", o: { degreeOrder: false, smallestFirst: false, symmetry: true, forward: true, bound: true, stopEarly: true } },
+  { name: "+ ordering heuristics (the program)", short: "+ ordering", add: "Most neighbors first, smallest group first.", o: { degreeOrder: true, smallestFirst: true, symmetry: true, forward: true, bound: true, stopEarly: true } },
+];
+const ABL_BUDGET = 1e6;
+let ablChart = null, dpChart = null, ablToken = 0, ablDoneFor = null;
+
+if (typeof Chart !== "undefined") { Chart.defaults.font.family = "Geist, ui-sans-serif, system-ui, sans-serif"; }
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+async function runAblation() {
+  const key = `${state.preset}|${state.k}|${state.g.n}|${state.g.m}|${state.seed}|${state.g.edges.join(";")}`;
+  if (ablDoneFor === key) return;
+  const token = ++ablToken, g = state.g, k = state.k, n = g.n;
+  const rows = [];
+  if (k > n || k === n) {
+    $("ablStatus").textContent = "";
+    $("ablTable").innerHTML = `<tbody><tr><td class="muted">Easy case (k ${k > n ? ">" : "="} n): the program doesn't search, so there's nothing to compare.</td></tr></tbody>`;
+    $("ablSummary").textContent = "For this input the program answers without searching, so there is nothing to compare. Pick a different k.";
+    drawAblChart([]); ablDoneFor = key; return;
+  }
+  $("ablStatus").innerHTML = `<span class="spinner"></span> measuring…`;
+  $("ablSummary").textContent = "";
+  for (const cfg of ABL) {
+    await new Promise(r => setTimeout(r, 0));
+    if (token !== ablToken) return;
+    const t0 = performance.now();
+    const r = runSearch(g, k, Object.assign({}, cfg.o, { initBest: n + 1, target: cfg.o.stopEarly ? spreadLowerBound(n, k) : -1, budget: ABL_BUDGET, record: false }));
+    rows.push({ name: cfg.name, short: cfg.short, add: cfg.add, nodes: Math.min(r.nodes, ABL_BUDGET), capped: r.aborted, ms: performance.now() - t0 });
+  }
+  if (token !== ablToken) return;
+  $("ablStatus").textContent = "";
+  $("ablTable").innerHTML = `<thead><tr><th>Setup</th><th>What it adds</th><th class="num">Steps</th><th class="num">Time</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td class="muted">${esc(r.add)}</td><td class="num">${r.capped ? "≥ " : ""}${fmt(r.nodes)}</td><td class="num">${r.ms < 1 ? "<1" : Math.round(r.ms)} ms</td></tr>`).join("") + "</tbody>";
+  drawAblChart(rows);
+  $("ablSummary").textContent = ablationSummary(rows);
+  $("ablHint").hidden = state.preset === "star39";
+  ablDoneFor = key;
+}
+
+function ablationSummary(rows) {
+  const first = rows[0], last = rows[rows.length - 1], ratio = first.nodes / Math.max(1, last.nodes);
+  if (ratio < 1.5) return "On this graph every setup finishes in a handful of steps, so the rules barely matter. Pick a bigger graph to see the difference.";
+  let bi = 1, br = 0;
+  for (let i = 1; i < rows.length; i++) { const r = rows[i - 1].nodes / Math.max(1, rows[i].nodes); if (r > br) { br = r; bi = i; } }
+  const sig2 = x => { const p = Math.pow(10, Math.max(0, Math.floor(Math.log10(x)) - 1)); return Math.floor(x / p) * p; };
+  const times = ratio >= 100 ? fmt(sig2(ratio)) : ratio >= 10 ? fmt(Math.round(ratio)) : ratio.toFixed(1);
+  const rule = rows[bi].name.replace(/^\+ /, "").replace(/ \(the program\)$/, "").replace(/[“”]/g, "");
+  return `On this graph, plain backtracking ${first.capped ? "needs more than" : "takes"} ${fmt(first.nodes)} steps and the program takes ${fmt(last.nodes)}: ` +
+    `${first.capped ? "over " : "about "}${times} times fewer. The biggest single drop comes from ${rule}.`;
+}
+
+function drawAblChart(rows) {
+  const box = $("ablChart");
+  if (typeof Chart === "undefined") { box.parentElement.innerHTML = `<p class="chart-fallback">Charts need an internet connection (Chart.js). The table below has the same numbers.</p>`; return; }
+  if (ablChart) ablChart.destroy();
+  const fg = cssVar("--foreground"), mutedFg = cssVar("--muted-foreground"), border = cssVar("--border");
+  ablChart = new Chart(box, {
+    type: "bar",
+    data: { labels: rows.map(r => r.short), datasets: [{ data: rows.map(r => r.nodes), borderRadius: 4, maxBarThickness: 46,
+      backgroundColor: rows.map((r, i) => r.capped ? cssVar("--danger") : i === rows.length - 1 ? fg : mutedFg) }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${rows[c.dataIndex].capped ? "≥ " : ""}${fmt(c.parsed.y)} steps${rows[c.dataIndex].capped ? " (stopped at the limit)" : ""}` } } },
+      scales: {
+        x: { ticks: { color: mutedFg, font: { size: 11 }, maxRotation: 0, autoSkip: false, callback(v) { const s = this.getLabelForValue(v); return s.length > 18 ? s.replace(/(.{1,18})(\s|$)/g, "$1\n").trim().split("\n") : s; } }, grid: { display: false }, border: { color: border } },
+        y: { type: "logarithmic", min: 1, ticks: { color: mutedFg, font: { family: "Geist Mono", size: 11 }, callback: v => [1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7].includes(v) ? fmt(v) : "" }, grid: { color: border }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function drawDpChart() {
+  const box = $("dpChart");
+  if (typeof Chart === "undefined") { box.parentElement.innerHTML = `<p class="chart-fallback">Charts need an internet connection (Chart.js).</p>`; return; }
+  if (dpChart) dpChart.destroy();
+  const fg = cssVar("--foreground"), mutedFg = cssVar("--muted-foreground"), border = cssVar("--border"), info = cssVar("--info");
+  const xs = [14, 15, 16, 17, 18, 19, 20];
+  dpChart = new Chart(box, {
+    type: "line",
+    data: { labels: xs, datasets: [
+      { label: "Measured", data: [0.0044, null, 0.0164, null, 0.1205, null, 1.0327], spanGaps: true, borderColor: fg, backgroundColor: fg, pointRadius: 4, borderWidth: 2 },
+      { label: "Predicted 3ⁿ growth", data: xs.map(x => 1.0327 * Math.pow(3, x - 20)), borderColor: info, borderDash: [5, 4], pointRadius: 0, borderWidth: 2 },
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: "top", align: "start", labels: { color: mutedFg, usePointStyle: true, pointStyle: "circle", boxWidth: 7, boxHeight: 7, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y < 0.1 ? (c.parsed.y * 1000).toFixed(1) + " ms" : c.parsed.y.toFixed(2) + " s"}` } } },
+      scales: {
+        x: { title: { display: true, text: "vertices (n)", color: mutedFg }, ticks: { color: mutedFg }, grid: { display: false }, border: { color: border } },
+        y: { type: "logarithmic", title: { display: true, text: "seconds", color: mutedFg }, ticks: { color: mutedFg, callback: v => [0.001, 0.01, 0.1, 1].includes(v) ? v : "" }, grid: { color: border }, border: { display: false } },
+      },
+    },
+  });
+}
+
+/* ---------- tabs ---------- */
+const TABS = ["overview", "bt", "dp", "speed"];
+let activeTab = "overview";
+function showTab(name) {
+  activeTab = name;
+  for (const t of TABS) {
+    $(`tab-${t}`).setAttribute("aria-selected", t === name ? "true" : "false");
+    $(`panel-${t}`).hidden = t !== name;
+  }
+  if (name !== "bt") btPlayer.stop();
+  if (name !== "dp") dpPlayer.stop();
+  if (name === "speed") { if (!dpChart) drawDpChart(); runAblation(); }
+  try { localStorage.setItem("coloring-tab", name); } catch (e) {}
+  if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name);
+}
+
+const FINAL_TAGS = new Set(["no answer", "done", "output"]);
+
+/* ---------- run ---------- */
+function load(g, k, pos, warnings) {
+  state.g = g; state.k = k; state.warnings = warnings || [];
+  state.pos = pos || forceLayout(g, state.seed);
+  state.xy = fitPositions(state.pos);
+  run();
+}
+function run() {
+  const t0 = performance.now();
+  state.result = solve(state.g, state.k);
+  const ms = performance.now() - t0;
+  $("warnings").innerHTML = state.warnings.map(w => `warning: ${esc(w)}`).join("<br>");
+  renderOverview();
+  setupBt();
+  setupDp();
+  ablDoneFor = null;
+  if (activeTab === "speed") runAblation();
+}
+function loadPreset(name) {
+  if (name === "custom") return enterCustom();
+  state.preset = name;
+  presetSelect.setValue(name);
+  $("editor").hidden = true; $("parseErr").textContent = "";
+  const p = PRESETS[name];
+  if (name === "random") {
+    const n = 7 + (state.seed % 6);   /* small enough for both animations */
+    load(makeGraph(n, randomEdges(n, state.seed)), state.k, null, []);
+    return;
+  }
+  state.k = p.k; $("kInput").value = p.k;
+  load(makeGraph(p.n, p.edges), p.k, p.pos, []);
+}
+
+/* "Custom input": open the editor on the current graph */
+function enterCustom() {
+  state.preset = "custom";
+  presetSelect.setValue("custom");
+  $("editor").hidden = false;
+  $("inputText").value = toInputText(state.k, state.g);
+  $("parseErr").textContent = "";
+  $("kpiNsub").textContent = "your input";
+  $("inputText").focus({ preventScroll: true });
+}
+/* parse the editor text and run it; returns false on an input error */
+function applyCustom() {
+  const r = parseInput($("inputText").value);
+  if (r.error) { $("parseErr").textContent = `error: ${r.error}`; return false; }
+  $("parseErr").textContent = "";
+  const same = r.g.n === state.g.n && r.g.edges.join(";") === state.g.edges.join(";");
+  $("kInput").value = r.k;
+  load(r.g, r.k, same ? state.pos : null, r.warnings);
+  return true;
+}
+/* Color / Randomize: scroll to the animation for this input and play it */
+function playAnimation() {
+  const n = state.g.n, k = state.k;
+  let tab = activeTab;
+  if (k >= n) tab = "overview";
+  else if (tab !== "bt" && tab !== "dp") tab = n <= DP_AUTO_N && n <= DP_ANIM_MAX ? "dp" : "bt";
+  else if (tab === "dp" && n > DP_ANIM_MAX) tab = "bt";
+  showTab(tab);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $("tab-overview").parentElement.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  const pl = tab === "bt" ? btPlayer : tab === "dp" ? dpPlayer : null;
+  if (pl && pl.steps.length > 1) { pl.stop(); pl.go(0); pl.toggle(); }
+}
+
+function init() {
+  const items = [];
+  for (const [key, p] of Object.entries(PRESETS)) {
+    if (!items.length || items[items.length - 1].group !== p.group) items.push({ heading: p.group, group: p.group });
+    items.push({ value: key, label: p.label, hint: p.hint || `${p.n} vertices`, group: p.group });
+  }
+  items.push({ heading: "Your input", group: "Your input" }, { value: "custom", label: "Custom input", hint: "edit the matrix", group: "Your input" });
+  presetSelect = new Select($("presetSel"), items, "presetLbl", v => loadPreset(v));
+  btPlayer = new Player($("btPlayer"), renderBt);
+  dpPlayer = new Player($("dpPlayer"), renderDp);
+  $("kInput").onchange = () => {
+    const k = Math.max(1, Math.min(64, Math.round(+$("kInput").value) || 1));
+    $("kInput").value = k; state.k = k;
+    if (state.preset === "custom") {   /* keep the editor text in sync, keep the user's matrix edits */
+      $("inputText").value = $("inputText").value.replace(/^(\uFEFF?\s*)\S+/, `$1${k}`);
+      applyCustom();
+    } else run();
+  };
+  $("colorBtn").onclick = () => {
+    if (state.preset === "custom" && !applyCustom()) return;
+    playAnimation();
+  };
+  $("randomBtn").onclick = () => {
+    /* new random graph; skip ones with no valid coloring so there's something to watch */
+    for (let tries = 0; tries < 25; tries++) {
+      state.seed = (state.seed * 7919 + 13) % 100003;
+      const n = 7 + (state.seed % 6);
+      if (solve(makeGraph(n, randomEdges(n, state.seed)), state.k).found) break;
+    }
+    loadPreset("random");
+    playAnimation();
+  };
+  for (const t of TABS) $(`tab-${t}`).onclick = () => showTab(t);
+  $("tab-overview").parentElement.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault(); e.stopPropagation();
+    const i = TABS.indexOf(activeTab), j = (i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length;
+    showTab(TABS[j]); $(`tab-${TABS[j]}`).focus();
+  });
+  document.addEventListener("keydown", e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.getAttribute("role") === "tab" || e.target.closest(".sel")) return;
+    const pl = activeTab === "bt" ? btPlayer : activeTab === "dp" ? dpPlayer : null;
+    if (!pl) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); pl.step(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); pl.step(-1); }
+    else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); pl.toggle(); }
+  });
+  $("themeBtn").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("coloring-theme", root.dataset.theme); } catch (e) {}
+    if (dpChart) { dpChart.destroy(); dpChart = null; if (activeTab === "speed") drawDpChart(); }
+    if (ablChart && activeTab === "speed") { ablDoneFor = null; runAblation(); }
+  };
+  try { const th = localStorage.getItem("coloring-theme"); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
+  loadPreset("sample6");
+  let tab = "overview";
+  try { tab = localStorage.getItem("coloring-tab") || "overview"; } catch (e) {}
+  if (TABS.includes(location.hash.slice(1))) tab = location.hash.slice(1);
+  showTab(TABS.includes(tab) ? tab : "overview");
+}
+init();
+</script>
+</body>
+</html>
